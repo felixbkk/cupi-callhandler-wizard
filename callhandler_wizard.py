@@ -26,9 +26,12 @@ HEADERS = {"Accept": "application/json"}
 ROWS_PER_PAGE = 512
 
 
+API_TIMEOUT = 30  # seconds per request
+
+
 def api_get(session, host, path, params=None):
     url = f"{host}{path}"
-    resp = session.get(url, params=params, headers=HEADERS, verify=False)
+    resp = session.get(url, params=params, headers=HEADERS, verify=False, timeout=API_TIMEOUT)
     resp.raise_for_status()
     return resp.json()
 
@@ -265,17 +268,19 @@ def fetch_schedules(session, host):
         page += 1
 
     # Fetch time blocks for each schedule
-    for sched in all_schedules:
+    total_sched = len(all_schedules)
+    for i, sched in enumerate(all_schedules):
         sched_id = sched.get("ObjectId", "")
         sched_name = sched.get("DisplayName", "Unknown")
+        if (i + 1) % 25 == 0 or i == 0 or i == total_sched - 1:
+            print(f"  Fetching schedule details {i + 1}/{total_sched}: {sched_name}")
         try:
             data = api_get(session, host, f"/vmrest/schedules/{sched_id}/scheduledetails")
             details = data.get("ScheduleDetail", [])
             if isinstance(details, dict):
                 details = [details]
             sched["_details"] = details
-        except requests.exceptions.HTTPError:
-            print(f"  Warning: Failed to fetch details for schedule '{sched_name}'")
+        except (requests.exceptions.HTTPError, requests.exceptions.Timeout):
             sched["_details"] = []
 
     return all_schedules
