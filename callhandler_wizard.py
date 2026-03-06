@@ -1419,6 +1419,123 @@ def cmd_handler(args):
             print(json.dumps(ch, indent=2))
 
 
+PROBE_ENDPOINTS = [
+    # Core
+    ("/vmrest/handlers/callhandlers", "Call Handlers"),
+    ("/vmrest/handlers/interviewhandlers", "Interview Handlers"),
+    ("/vmrest/routingrules", "Routing Rules"),
+    ("/vmrest/routingruleconditions", "Routing Rule Conditions"),
+    # Schedules
+    ("/vmrest/schedules", "Schedules"),
+    ("/vmrest/schedulesets", "Schedule Sets"),
+    ("/vmrest/holidayschedules", "Holiday Schedules"),
+    ("/vmrest/holidayschedulesets", "Holiday Schedule Sets"),
+    # Users & contacts
+    ("/vmrest/users", "Users"),
+    ("/vmrest/contacts", "Contacts"),
+    ("/vmrest/distributionlists", "Distribution Lists"),
+    # System
+    ("/vmrest/cluster", "Cluster"),
+    ("/vmrest/vmsservers", "VMS Servers"),
+    ("/vmrest/systemconfig", "System Config"),
+    ("/vmrest/portgroups", "Port Groups"),
+    ("/vmrest/ports", "Ports"),
+    ("/vmrest/phonerecordings", "Phone Recordings"),
+    # Call handler sub-resources (tested against first handler found)
+    ("/vmrest/handlers/callhandlers/{id}/menuentries", "Menu Entries (sample)"),
+    ("/vmrest/handlers/callhandlers/{id}/transferrules", "Transfer Rules (sample)"),
+    ("/vmrest/handlers/callhandlers/{id}/greetings", "Greetings (sample)"),
+    ("/vmrest/handlers/callhandlers/{id}/callerInput", "Caller Input (sample)"),
+    # Other
+    ("/vmrest/callhandlertemplates", "Call Handler Templates"),
+    ("/vmrest/notificationdevices", "Notification Devices"),
+    ("/vmrest/smpproviders", "SMPP Providers"),
+    ("/vmrest/tenants", "Tenants"),
+    ("/vmrest/timezones", "Time Zones"),
+    ("/vmrest/partitions", "Partitions"),
+    ("/vmrest/searchspaces", "Search Spaces"),
+    ("/vmrest/cosses", "Classes of Service"),
+    ("/vmrest/restrictionpatterns", "Restriction Patterns"),
+    ("/vmrest/restrictiontables", "Restriction Tables"),
+    ("/vmrest/ldapdirectories", "LDAP Directories"),
+    ("/vmrest/externalservices", "External Services"),
+    ("/vmrest/policies", "Policies"),
+]
+
+
+def cmd_probe(args):
+    """Probe known CUPI endpoints to see what's available on this server."""
+    session, host = connect(args)
+
+    # Get a sample handler ID for sub-resource probes
+    sample_id = None
+    try:
+        data = api_get(session, host, "/vmrest/handlers/callhandlers", {"rowsPerPage": 1})
+        handlers = data.get("Callhandler", [])
+        if isinstance(handlers, dict):
+            handlers = [handlers]
+        if handlers:
+            sample_id = handlers[0].get("ObjectId", "")
+    except Exception:
+        pass
+
+    print(f"\n{'='*70}")
+    print(f"CUPI ENDPOINT PROBE — {host}")
+    print(f"{'='*70}\n")
+
+    available = []
+    unavailable = []
+    errors = []
+
+    for path, label in PROBE_ENDPOINTS:
+        if "{id}" in path:
+            if not sample_id:
+                unavailable.append((path, label, "skipped — no sample handler"))
+                continue
+            path = path.replace("{id}", sample_id)
+
+        try:
+            url = f"{host}{path}"
+            resp = session.get(url, params={"rowsPerPage": 1}, headers=HEADERS, verify=False)
+            code = resp.status_code
+            total = ""
+            if code == 200:
+                try:
+                    data = resp.json()
+                    t = data.get("@total", "")
+                    if t:
+                        total = f" ({t} records)"
+                except Exception:
+                    pass
+                available.append((path, label, f"{code}{total}"))
+            elif code == 404:
+                unavailable.append((path, label, str(code)))
+            else:
+                errors.append((path, label, f"{code} {resp.reason}"))
+        except requests.exceptions.ConnectionError:
+            errors.append((path, label, "connection error"))
+        except Exception as e:
+            errors.append((path, label, str(e)))
+
+    print(f"  AVAILABLE ({len(available)}):")
+    for path, label, info in available:
+        print(f"    ✓ {label:<35} {path:<60} {info}")
+
+    if unavailable:
+        print(f"\n  NOT FOUND ({len(unavailable)}):")
+        for path, label, info in unavailable:
+            print(f"    ✗ {label:<35} {path:<60} {info}")
+
+    if errors:
+        print(f"\n  ERRORS ({len(errors)}):")
+        for path, label, info in errors:
+            print(f"    ! {label:<35} {path:<60} {info}")
+
+    print(f"\n{'='*70}")
+    print(f"  {len(available)} available / {len(unavailable)} not found / {len(errors)} errors")
+    print(f"{'='*70}")
+
+
 def cmd_schedules(args):
     """List all schedules and their time blocks."""
     session, host = connect(args)
@@ -1594,6 +1711,9 @@ def main():
     # orphans — find unreachable handlers
     sub_orphans = subparsers.add_parser("orphans", help="Find orphaned, unreachable, and dead-end handlers")
 
+    # probe — test what endpoints exist
+    sub_probe = subparsers.add_parser("probe", help="Probe CUPI endpoints to see what's available on this server")
+
     args = parser.parse_args()
 
     if args.command is None or args.command == "generate":
@@ -1606,6 +1726,8 @@ def main():
         cmd_schedules(args)
     elif args.command == "orphans":
         cmd_orphans(args)
+    elif args.command == "probe":
+        cmd_probe(args)
 
 
 if __name__ == "__main__":
