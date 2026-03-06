@@ -9,9 +9,12 @@ import argparse
 import getpass
 import json
 import os
+import platform
 import re
+import subprocess
 import sys
 from datetime import datetime
+from urllib.parse import urlparse
 
 import requests
 
@@ -84,7 +87,6 @@ def fetch_site_id(session, host):
     except requests.exceptions.HTTPError:
         pass
     # Last resort: derive from host URL
-    from urllib.parse import urlparse
     parsed = urlparse(host)
     return parsed.hostname or "unknown-site"
 
@@ -1251,9 +1253,32 @@ function debugOrphans() {{
 </html>'''
 
 
+def ping_check(host):
+    """Ping the host to verify network connectivity before attempting API calls."""
+    hostname = urlparse(host).hostname or host
+    print(f"Checking connectivity to {hostname}...")
+    param = "-n" if platform.system().lower() == "windows" else "-c"
+    try:
+        result = subprocess.run(
+            ["ping", param, "2", hostname],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            timeout=10,
+        )
+        if result.returncode != 0:
+            print(f"\nError: Cannot reach {hostname}.")
+            print("Are you connected to the VPN?")
+            sys.exit(1)
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        print(f"\nError: Cannot reach {hostname}.")
+        print("Are you connected to the VPN?")
+        sys.exit(1)
+    print(f"  {hostname} is reachable.")
+
+
 def connect(args):
     """Create an authenticated session from CLI args."""
     host = args.host.rstrip("/")
+    ping_check(host)
     password = getpass.getpass(f"Password for {args.user}@{host}: ")
     session = requests.Session()
     session.auth = (args.user, password)
@@ -1563,4 +1588,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\n\nInterrupted. Exiting.")
+        sys.exit(0)
