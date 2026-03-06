@@ -1299,14 +1299,25 @@ def cmd_generate(args):
         call_handlers = fetch_call_handlers(session, host)
         interview_handlers = fetch_interview_handlers(session, host)
         routing_rules = fetch_routing_rules(session, host)
-        holiday_schedules = fetch_holiday_schedules(session, host)
-        schedules = fetch_schedules(session, host)
     except requests.exceptions.ConnectionError as e:
         print(f"Error: Could not connect to {host}: {e}")
         sys.exit(1)
     except requests.exceptions.HTTPError as e:
         print(f"Error: API request failed: {e}")
         sys.exit(1)
+
+    # Non-critical data — continue if endpoints are unavailable
+    try:
+        holiday_schedules = fetch_holiday_schedules(session, host)
+    except (requests.exceptions.HTTPError, requests.exceptions.ConnectionError) as e:
+        print(f"  Warning: Could not fetch holiday schedules: {e}")
+        holiday_schedules = []
+
+    try:
+        schedules = fetch_schedules(session, host)
+    except (requests.exceptions.HTTPError, requests.exceptions.ConnectionError) as e:
+        print(f"  Warning: Could not fetch schedules: {e}")
+        schedules = []
 
     print(f"\nFound {len(call_handlers)} call handlers, "
           f"{len(interview_handlers)} interview handlers, "
@@ -1411,8 +1422,18 @@ def cmd_handler(args):
 def cmd_schedules(args):
     """List all schedules and their time blocks."""
     session, host = connect(args)
-    schedules = fetch_schedules(session, host)
-    holiday_schedules = fetch_holiday_schedules(session, host)
+
+    try:
+        schedules = fetch_schedules(session, host)
+    except (requests.exceptions.HTTPError, requests.exceptions.ConnectionError) as e:
+        print(f"  Warning: Could not fetch schedules: {e}")
+        schedules = []
+
+    try:
+        holiday_schedules = fetch_holiday_schedules(session, host)
+    except (requests.exceptions.HTTPError, requests.exceptions.ConnectionError) as e:
+        print(f"  Warning: Could not fetch holiday schedules: {e}")
+        holiday_schedules = []
 
     print(f"\n{'='*60}")
     print("BUSINESS HOUR SCHEDULES")
