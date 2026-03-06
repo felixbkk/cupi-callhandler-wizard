@@ -1290,6 +1290,25 @@ def connect(args):
     return session, host
 
 
+class TeeLogger:
+    """Write to both stdout and a log file."""
+    def __init__(self, log_path):
+        self.terminal = sys.stdout
+        self.log = open(log_path, "w")
+
+    def write(self, message):
+        self.terminal.write(message)
+        self.log.write(message)
+
+    def flush(self):
+        self.terminal.flush()
+        self.log.flush()
+
+    def close(self):
+        self.log.close()
+        sys.stdout = self.terminal
+
+
 def cmd_generate(args):
     """Full report generation (default command)."""
     session, host = connect(args)
@@ -1299,6 +1318,17 @@ def cmd_generate(args):
     print(f"  Site: {site_id}")
 
     site_dir = prepare_site_dir(site_id)
+
+    # Start logging to file
+    log_path = os.path.join(site_dir, "run.log")
+    tee = TeeLogger(log_path)
+    sys.stdout = tee
+    print(f"Log: {log_path}")
+    print(f"Site: {site_id}")
+    print(f"Host: {host}")
+    print(f"User: {args.user}")
+    print(f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print()
 
     try:
         call_handlers = fetch_call_handlers(session, host)
@@ -1358,6 +1388,7 @@ def cmd_generate(args):
 
     print(f"\nDone! Reports written to {site_dir}/")
     print(f"  Open {map_path} (graph) or {report_path} (table) in a browser.")
+    tee.close()
 
 
 def cmd_query(args):
