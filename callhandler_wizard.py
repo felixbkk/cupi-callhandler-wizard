@@ -127,6 +127,15 @@ def fetch_call_handlers(session, host):
         if len(all_handlers) >= total:
             break
         page += 1
+
+    # Filter out user voicemail handlers (numeric-only names like 88712142)
+    before = len(all_handlers)
+    all_handlers = [h for h in all_handlers
+                    if not h.get("DisplayName", "").strip().isdigit()]
+    skipped = before - len(all_handlers)
+    if skipped:
+        print(f"  Filtered out {skipped} voicemail handlers ({before} → {len(all_handlers)})")
+
     return all_handlers
 
 
