@@ -174,40 +174,49 @@ def fetch_routing_rules(session, host):
     return all_rules
 
 
+# Track endpoints that have 404'd so we don't spam warnings for every handler
+_disabled_endpoints = set()
+
+
+def _fetch_handler_sub(session, host, handler_id, handler_name, subpath, key, alt_paths=None):
+    """Fetch a call handler sub-resource, trying alternative paths if the primary 404s.
+    Once an endpoint 404s, it's disabled for the rest of the run."""
+    paths_to_try = [subpath] + (alt_paths or [])
+    for path in paths_to_try:
+        full = f"/vmrest/handlers/callhandlers/{handler_id}/{path}"
+        if path in _disabled_endpoints:
+            continue
+        try:
+            data = api_get(session, host, full)
+            records = data.get(key, [])
+            if isinstance(records, dict):
+                records = [records]
+            return records
+        except requests.exceptions.HTTPError as e:
+            if e.response is not None and e.response.status_code == 404:
+                if path not in _disabled_endpoints:
+                    _disabled_endpoints.add(path)
+                    print(f"  Endpoint '{path}' not available (404) — skipping for all handlers")
+            else:
+                print(f"  Warning: {path} failed for '{handler_name}': {e}")
+            continue
+    return []
+
+
 def fetch_menu_entries(session, host, handler_id, handler_name):
-    try:
-        data = api_get(session, host, f"/vmrest/handlers/callhandlers/{handler_id}/menuentries")
-        entries = data.get("MenuEntry", [])
-        if isinstance(entries, dict):
-            entries = [entries]
-        return entries
-    except requests.exceptions.HTTPError as e:
-        print(f"  Warning: Failed to fetch menu entries for '{handler_name}' ({handler_id}): {e}")
-        return []
+    return _fetch_handler_sub(session, host, handler_id, handler_name,
+                              "menuentries", "MenuEntry")
 
 
 def fetch_transfer_rules(session, host, handler_id, handler_name):
-    try:
-        data = api_get(session, host, f"/vmrest/handlers/callhandlers/{handler_id}/transferrules")
-        rules = data.get("TransferRule", [])
-        if isinstance(rules, dict):
-            rules = [rules]
-        return rules
-    except requests.exceptions.HTTPError as e:
-        print(f"  Warning: Failed to fetch transfer rules for '{handler_name}' ({handler_id}): {e}")
-        return []
+    return _fetch_handler_sub(session, host, handler_id, handler_name,
+                              "transferrules", "TransferRule",
+                              alt_paths=["transferoptions"])
 
 
 def fetch_greetings(session, host, handler_id, handler_name):
-    try:
-        data = api_get(session, host, f"/vmrest/handlers/callhandlers/{handler_id}/greetings")
-        greetings = data.get("Greeting", [])
-        if isinstance(greetings, dict):
-            greetings = [greetings]
-        return greetings
-    except requests.exceptions.HTTPError as e:
-        print(f"  Warning: Failed to fetch greetings for '{handler_name}' ({handler_id}): {e}")
-        return []
+    return _fetch_handler_sub(session, host, handler_id, handler_name,
+                              "greetings", "Greeting")
 
 
 def fetch_holiday_schedules(session, host):
