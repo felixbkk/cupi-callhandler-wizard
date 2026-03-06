@@ -1430,6 +1430,9 @@ PROBE_ENDPOINTS = [
     ("/vmrest/schedulesets", "Schedule Sets"),
     ("/vmrest/holidayschedules", "Holiday Schedules"),
     ("/vmrest/holidayschedulesets", "Holiday Schedule Sets"),
+    ("/vmrest/schedules/{sched_id}/scheduledetails", "Schedule Details (sample)"),
+    ("/vmrest/schedulesets/{schedset_id}/schedulessetmembers", "Schedule Set Members (sample)"),
+    ("/vmrest/schedulesets/{schedset_id}/schedulesetmembers", "Schedule Set Members alt (sample)"),
     # Users & contacts
     ("/vmrest/users", "Users"),
     ("/vmrest/contacts", "Contacts"),
@@ -1444,8 +1447,12 @@ PROBE_ENDPOINTS = [
     # Call handler sub-resources (tested against first handler found)
     ("/vmrest/handlers/callhandlers/{id}/menuentries", "Menu Entries (sample)"),
     ("/vmrest/handlers/callhandlers/{id}/transferrules", "Transfer Rules (sample)"),
+    ("/vmrest/handlers/callhandlers/{id}/transferoptions", "Transfer Options (sample)"),
     ("/vmrest/handlers/callhandlers/{id}/greetings", "Greetings (sample)"),
     ("/vmrest/handlers/callhandlers/{id}/callerInput", "Caller Input (sample)"),
+    ("/vmrest/handlers/callhandlers/{id}/callerinput", "Caller Input lowercase (sample)"),
+    ("/vmrest/handlers/callhandlers/{id}/callhandlerowner", "Call Handler Owner (sample)"),
+    ("/vmrest/handlers/callhandlers/{id}/transferrule", "Transfer Rule singular (sample)"),
     # Other
     ("/vmrest/callhandlertemplates", "Call Handler Templates"),
     ("/vmrest/notificationdevices", "Notification Devices"),
@@ -1467,8 +1474,10 @@ def cmd_probe(args):
     """Probe known CUPI endpoints to see what's available on this server."""
     session, host = connect(args)
 
-    # Get a sample handler ID for sub-resource probes
+    # Get sample IDs for sub-resource probes
     sample_id = None
+    sample_sched_id = None
+    sample_schedset_id = None
     try:
         data = api_get(session, host, "/vmrest/handlers/callhandlers", {"rowsPerPage": 1})
         handlers = data.get("Callhandler", [])
@@ -1476,6 +1485,24 @@ def cmd_probe(args):
             handlers = [handlers]
         if handlers:
             sample_id = handlers[0].get("ObjectId", "")
+    except Exception:
+        pass
+    try:
+        data = api_get(session, host, "/vmrest/schedules", {"rowsPerPage": 1})
+        scheds = data.get("Schedule", [])
+        if isinstance(scheds, dict):
+            scheds = [scheds]
+        if scheds:
+            sample_sched_id = scheds[0].get("ObjectId", "")
+    except Exception:
+        pass
+    try:
+        data = api_get(session, host, "/vmrest/schedulesets", {"rowsPerPage": 1})
+        ssets = data.get("ScheduleSet", [])
+        if isinstance(ssets, dict):
+            ssets = [ssets]
+        if ssets:
+            sample_schedset_id = ssets[0].get("ObjectId", "")
     except Exception:
         pass
 
@@ -1487,15 +1514,27 @@ def cmd_probe(args):
     unavailable = []
     errors = []
 
+    id_subs = {
+        "{id}": sample_id,
+        "{sched_id}": sample_sched_id,
+        "{schedset_id}": sample_schedset_id,
+    }
+
     for path, label in PROBE_ENDPOINTS:
-        if "{id}" in path:
-            if not sample_id:
-                unavailable.append((path, label, "skipped — no sample handler"))
-                continue
-            path = path.replace("{id}", sample_id)
+        resolved = path
+        skip = False
+        for placeholder, val in id_subs.items():
+            if placeholder in resolved:
+                if not val:
+                    unavailable.append((path, label, "skipped — no sample ID"))
+                    skip = True
+                    break
+                resolved = resolved.replace(placeholder, val)
+        if skip:
+            continue
 
         try:
-            url = f"{host}{path}"
+            url = f"{host}{resolved}"
             resp = session.get(url, params={"rowsPerPage": 1}, headers=HEADERS, verify=False)
             code = resp.status_code
             total = ""
