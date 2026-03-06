@@ -1,6 +1,6 @@
 # cupi-callhandler-wizard
 
-Connects to a Cisco Unity Connection 12.x server via the CUPI REST API and generates an interactive D3.js force-directed graph visualization of the call handler routing tree. The output is a self-contained HTML file.
+Connects to a Cisco Unity Connection 12.x server via the CUPI REST API and generates interactive visualizations of the call handler routing tree. All operations are **read-only** — the tool never modifies any data on the CUC server.
 
 ## Setup
 
@@ -10,38 +10,83 @@ Connects to a Cisco Unity Connection 12.x server via the CUPI REST API and gener
 pip install -r requirements.txt
 ```
 
-2. Create a `.env` file in the project root:
-
-```
-CUC_HOST=https://10.212.111.17
-CUC_USER=admin
-CUC_PASS=yourpassword
-```
-
 ## Usage
 
+### Generate Reports (default)
+
 ```bash
-python callhandler_wizard.py
+python callhandler_wizard.py --host https://10.212.111.17 --user admin generate
 ```
 
-The script will fetch all call handlers, routing rules, interview handlers, menu entries, transfer rules, and greetings from the CUPI API, then generate `callhandler_map.html` in the working directory.
+You will be securely prompted for the password. Outputs two self-contained HTML files:
 
-Open `callhandler_map.html` in a browser to explore the interactive graph.
+- **`callhandler_map.html`** — Interactive D3.js force-directed graph visualization
+- **`callhandler_report.html`** — Static table/list report with schedule view, debug tools, and audio links
+
+The `generate` subcommand is the default — you can omit it:
+
+```bash
+python callhandler_wizard.py --host https://10.212.111.17 --user admin
+```
+
+### CLI Debug Tools
+
+**Look up a specific handler** by name, extension, or Object ID:
+
+```bash
+python callhandler_wizard.py --host https://... --user admin handler "Opening Greeting"
+python callhandler_wizard.py --host https://... --user admin handler 2000
+python callhandler_wizard.py --host https://... --user admin handler abc123 --raw
+```
+
+**List all schedules** (business hours and holidays):
+
+```bash
+python callhandler_wizard.py --host https://... --user admin schedules
+```
+
+**Query any raw CUPI API path** and dump the JSON response:
+
+```bash
+python callhandler_wizard.py --host https://... --user admin query /vmrest/handlers/callhandlers
+python callhandler_wizard.py --host https://... --user admin query /vmrest/schedules
+```
+
+## Report Features
+
+### Graph View (`callhandler_map.html`)
+
+- **Drag** nodes to rearrange the layout
+- **Click** a node to view its details in the sidebar
+- **Zoom** and pan the graph
+- **Toggle** visibility of orphans, unreachable subtrees, and dead ends
+
+### Table View (`callhandler_report.html`)
+
+- **Schedule mode selector** — switch between Standard, Off Hours, Holiday, and All views to see how call routing changes by time of day
+- **Search and filter** by name, extension, type, or classification
+- **Audio links** for handlers with custom greeting recordings
+- **Schedules table** showing business hour time blocks per schedule
+- **Holiday schedules table** with start/end dates
+- **Debug panel** (bottom-right button) with:
+  - Node lookup by name, extension, or Object ID
+  - Problem finder (dead ends, orphans, unreachable nodes)
+  - Full JSON data dump for export
 
 ## Node Classifications
 
 | Color  | Classification       | Description |
 |--------|----------------------|-------------|
-| Green  | **Root**             | Targeted by a routing rule and/or has no incoming edges from other handlers — valid entry points |
-| Blue   | **Normal**           | Standard reachable call handler with both incoming and outgoing connections |
-| Grey   | **True Orphan**      | No incoming edges, no outgoing edges, and not targeted by any routing rule |
-| Orange | **Unreachable Subtree** | Has outgoing edges but no incoming edges and not targeted by a routing rule — exists but no caller can reach it |
-| Red    | **Dead End**         | Has incoming edges but no outgoing edges and no transfer target — callers who reach this node have nowhere to go |
+| Green  | **Root**             | Targeted by a routing rule — valid entry point |
+| Blue   | **Normal**           | Standard reachable call handler |
+| Grey   | **True Orphan**      | No connections at all — completely isolated |
+| Orange | **Unreachable Subtree** | Has outgoing edges but nothing routes to it |
+| Red    | **Dead End**         | Has incoming edges but callers have nowhere to go |
+| Purple | **Interview Handler** | Interview handler node |
+| Teal   | **Phone Extension**  | Transfer target phone extension |
 
-## Graph Features
+## Security Notes
 
-- **Drag** nodes to rearrange the layout
-- **Click** a node to view its details (DisplayName, extension, ObjectId, classification) in the sidebar
-- **Toggle buttons** to show/hide true orphans, unreachable subtrees, and dead ends
-- **Legend** explaining all node colors and classifications
-- Edge labels show the key or rule name that triggers each route
+- All API calls are **read-only** (HTTP GET only). The tool never creates, updates, or deletes any data on the CUC server.
+- Password is entered via secure prompt (hidden input) — never stored to disk or passed as a CLI argument.
+- SSL verification is disabled (`verify=False`) to support self-signed certificates common on CUC servers.

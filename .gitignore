@@ -1,4 +1,13 @@
 .env
 __pycache__/
 *.pyc
+
+# Generated reports — may contain sensitive handler data
+reports/
+
+# Legacy output location (before site directories)
 callhandler_map.html
+callhandler_report.html
+
+# Future audio downloads
+audio/
