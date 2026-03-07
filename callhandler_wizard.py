@@ -1766,7 +1766,7 @@ function renderTable() {{
 
 function renderCallFlowTrees(activeEdges) {{
     const container = document.getElementById("callFlowTrees");
-    // Build adjacency: source -> [{label, target}]
+    // Build adjacency: source -> [{{label, target}}]
     const adj = {{}};
     activeEdges.forEach(e => {{
         (adj[e.source] = adj[e.source] || []).push({{ label: e.label, target: e.target }});
