@@ -1225,8 +1225,8 @@ def generate_table_html(nodes, edges, holiday_schedules, schedules):
             "name": s.get("DisplayName", ""),
             "entries": [{
                 "name": h.get("DisplayName", ""),
-                "start": h.get("StartDate", ""),
-                "end": h.get("EndDate", ""),
+                "start": h.get("StartDate", "").split(" ")[0],
+                "end": h.get("EndDate", "").split(" ")[0],
             } for h in s.get("_holidays", [])]
         } for s in holiday_schedules],
         "schedules": [{
@@ -1352,7 +1352,7 @@ tr:hover {{ background: #16213e; }}
 <h2 id="holidays">Holiday Schedules</h2>
 <table id="holidayTable">
 <thead>
-<tr><th>Schedule</th><th>Holiday</th><th>Start Date</th><th>End Date</th></tr>
+<tr><th>Schedule</th><th>Holiday</th><th>Date</th></tr>
 </thead>
 <tbody></tbody>
 </table>
@@ -1595,14 +1595,15 @@ function renderCallFlowTrees(activeEdges) {{
 (function() {{
     const tbody = document.querySelector("#holidayTable tbody");
     if (!data.holidays.length) {{
-        tbody.innerHTML = '<tr><td colspan="4" class="muted">No holiday schedules found</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="3" class="muted">No holiday schedules found</td></tr>';
         return;
     }}
     data.holidays.forEach(s => {{
         if (!s.entries.length) return;
         s.entries.forEach(h => {{
             const tr = document.createElement("tr");
-            tr.innerHTML = '<td>' + esc(s.name) + '</td><td>' + esc(h.name) + '</td><td>' + esc(h.start) + '</td><td>' + esc(h.end) + '</td>';
+            const dateStr = h.start === h.end ? esc(h.start) : esc(h.start) + ' &ndash; ' + esc(h.end);
+            tr.innerHTML = '<td>' + esc(s.name) + '</td><td>' + esc(h.name) + '</td><td>' + dateStr + '</td>';
             tbody.appendChild(tr);
         }});
     }});
