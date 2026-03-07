@@ -1305,6 +1305,10 @@ tr:hover {{ background: #16213e; }}
 .flow-tree .flow-label {{ color: #e94560; }}
 .flow-tree .flow-muted {{ color: #555; }}
 .flow-tree .flow-visited {{ color: #555; font-style: italic; }}
+.section-header {{ display: flex; align-items: center; gap: 12px; }}
+.section-header h2 {{ margin: 0; }}
+.copy-btn {{ padding: 4px 10px; border: 1px solid #0f3460; background: #16213e; color: #888; cursor: pointer; border-radius: 3px; font-size: 11px; transition: all 0.2s; }}
+.copy-btn:hover {{ color: #e0e0e0; border-color: #e94560; }}
 </style>
 </head>
 <body>
@@ -1331,10 +1335,10 @@ tr:hover {{ background: #16213e; }}
 <button class="schedule-btn" data-schedule="all" onclick="setSchedule('all')">All (raw)</button>
 </div>
 
-<h2 id="flow-trees">Call Flow Trees</h2>
+<div class="section-header"><h2 id="flow-trees">Call Flow Trees</h2><button class="copy-btn" onclick="copyFlowTrees(this)">Copy</button></div>
 <div id="callFlowTrees"></div>
 
-<h2 id="handlers">Call Handlers &amp; Routing</h2>
+<div class="section-header"><h2 id="handlers">Call Handlers &amp; Routing</h2><button class="copy-btn" onclick="copyHandlerTable(this)">Copy as Markdown</button></div>
 <div class="filter-bar">
 <input type="text" id="search" placeholder="Filter by name, extension, or type..." oninput="renderTable()">
 <select id="classFilter" onchange="renderTable()">
@@ -1353,7 +1357,7 @@ tr:hover {{ background: #16213e; }}
 <tbody></tbody>
 </table>
 
-<h2 id="schedules">Schedules (Business Hours)</h2>
+<div class="section-header"><h2 id="schedules">Schedules (Business Hours)</h2><button class="copy-btn" onclick="copyTableAsMd('scheduleTable', this)">Copy as Markdown</button></div>
 <table id="scheduleTable">
 <thead>
 <tr><th>Schedule</th><th>Day(s)</th><th>Start Time</th><th>End Time</th><th>Active</th></tr>
@@ -1361,7 +1365,7 @@ tr:hover {{ background: #16213e; }}
 <tbody></tbody>
 </table>
 
-<h2 id="holidays">Holiday Schedules</h2>
+<div class="section-header"><h2 id="holidays">Holiday Schedules</h2><button class="copy-btn" onclick="copyTableAsMd('holidayTable', this)">Copy as Markdown</button></div>
 <table id="holidayTable">
 <thead>
 <tr><th>Schedule</th><th>Holiday</th><th>Date</th></tr>
@@ -1600,7 +1604,7 @@ function renderCallFlowTrees(activeEdges) {{
     data.schedules.forEach(s => {{
         if (!s.details.length) {{
             const tr = document.createElement("tr");
-            tr.innerHTML = '<td>' + esc(s.name) + '</td><td colspan="4" class="muted">No time blocks configured</td>';
+            tr.innerHTML = '<td>' + esc(s.name) + '</td><td>All days</td><td>12:00 AM</td><td>11:59 PM</td><td>Yes</td>';
             tbody.appendChild(tr);
             return;
         }}
@@ -1633,6 +1637,63 @@ function renderCallFlowTrees(activeEdges) {{
 
 // Initial render
 renderTable();
+
+// --- Copy helpers ---
+function flashBtn(btn, msg) {{
+    const orig = btn.textContent;
+    btn.textContent = msg || "Copied!";
+    setTimeout(() => btn.textContent = orig, 1500);
+}}
+
+function copyFlowTrees(btn) {{
+    const el = document.getElementById("callFlowTrees");
+    const text = el.innerText;
+    navigator.clipboard.writeText(text).then(() => flashBtn(btn));
+}}
+
+function copyHandlerTable(btn) {{
+    const activeEdges = data.edges.filter(edgeMatchesSchedule);
+    const outgoing = {{}};
+    const incoming = {{}};
+    activeEdges.forEach(e => {{
+        (outgoing[e.source] = outgoing[e.source] || []).push(e);
+        (incoming[e.target] = incoming[e.target] || []).push(e);
+    }});
+    const headers = ["Name", "Extension", "Type", "Classification", "Schedule / Conditions", "Incoming", "Outgoing", "Object ID"];
+    const rows = [headers.join(" | "), headers.map(() => "---").join(" | ")];
+    const typeOrder = {{ routingrule: 0, callhandler: 1, interview: 2, phone: 3 }};
+    const classOrder = {{ root: 0, normal: 1, deadend: 2, unreachable: 3, orphan: 4 }};
+    const sorted = [...data.nodes].sort((a, b) =>
+        (typeOrder[a.type] ?? 9) - (typeOrder[b.type] ?? 9) ||
+        (classOrder[a.classification] ?? 9) - (classOrder[b.classification] ?? 9) ||
+        a.name.toLowerCase().localeCompare(b.name.toLowerCase())
+    );
+    sorted.forEach(n => {{
+        const clsLabel = n.primary ? "Primary Root" : (classLabels[n.classification] || n.classification);
+        const outLinks = (outgoing[n.id] || []).map(e => e.label + " -> " + ((nodeMap[e.target] || {{}}).name || "?")).join("; ");
+        const inLinks = (incoming[n.id] || []).map(e => ((nodeMap[e.source] || {{}}).name || "?") + " -> " + e.label).join("; ");
+        let schedCond = "";
+        if (n.type === "routingrule") {{
+            schedCond = (n.conditions || []).map(c => c.param + " " + c.op + " " + c.value).join(", ") || "No conditions";
+        }} else {{
+            schedCond = n.scheduleName || "";
+        }}
+        rows.push([n.name, n.extension || "", n.type, clsLabel, schedCond, inLinks || "None", outLinks || "None", n.id].join(" | "));
+    }});
+    navigator.clipboard.writeText(rows.join("\\n")).then(() => flashBtn(btn));
+}}
+
+function copyTableAsMd(tableId, btn) {{
+    const table = document.getElementById(tableId);
+    const headerCells = Array.from(table.querySelectorAll("thead th"));
+    const headers = headerCells.map(th => th.textContent);
+    const lines = [headers.join(" | "), headers.map(() => "---").join(" | ")];
+    table.querySelectorAll("tbody tr").forEach(tr => {{
+        const cells = Array.from(tr.querySelectorAll("td")).map(td => td.textContent.trim());
+        lines.push(cells.join(" | "));
+    }});
+    navigator.clipboard.writeText(lines.join("\\n")).then(() => flashBtn(btn));
+}}
 
 // --- Debug Tools ---
 function toggleDebug() {{
