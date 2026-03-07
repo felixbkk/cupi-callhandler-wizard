@@ -18,7 +18,7 @@ import subprocess
 import sys
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime
+from datetime import datetime, timezone
 from urllib.parse import quote, urlparse
 
 import ssl
@@ -299,7 +299,6 @@ def fetch_holiday_schedules(session, host):
         # Fetch individual holidays for each schedule
         for sched in all_schedules:
             sched_id = sched.get("ObjectId", "")
-            sched_name = sched.get("DisplayName", "Unknown")
             try:
                 data = api_get(session, host, f"/vmrest/holidayschedules/{sched_id}/holidays")
                 holidays = data.get("Holiday", [])
@@ -819,7 +818,6 @@ def build_graph(call_handlers, interview_handlers, routing_rules, session, host,
         target_oid = rule.get("RouteTargetHandlerObjectId", "")
         rule_state = str(rule.get("State", "0"))
         rule_type = str(rule.get("Type", "3"))
-        _RULE_TYPES = {"1": "Direct", "2": "Forwarded", "3": "Both"}
 
         # Fetch conditions for this rule
         conditions = fetch_routing_rule_conditions(session, host, rule_oid, rule_name)
@@ -4151,7 +4149,7 @@ def generate_index_html(site_name="", run_utc=None, host="", site_flag=""):
     title_prefix = f"{site_name} — " if site_name else ""
     flag_html = f'<span style="font-size:32px; vertical-align:middle; margin-right:12px;">{site_flag}</span> ' if site_flag else ""
     if run_utc is None:
-        from datetime import timezone
+
         run_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     admin_link = f'{host}/cuadmin/home.do' if host else ""
     return f'''<!DOCTYPE html>
@@ -4315,7 +4313,7 @@ def cmd_generate(args):
     tee = TeeLogger(log_path)
     sys.stdout = tee
     try:
-        from datetime import timezone
+
         run_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
         print(f"Log: {log_path}")
         print(f"Site: {site_id} ({site_name})")
@@ -4720,7 +4718,6 @@ def cmd_audio_probe(args):
     print(f"Summary: {total_audio} audio files found across {handlers_with_audio} handlers")
     print(f"         {total_greetings} total greetings checked on {len(call_handlers)} handlers")
     if total_audio > 0:
-        pw_note = "PlayWhat=2" if total_audio > 0 else ""
         print(f"\nIf audio exists but PlayWhat != 2, the greeting data may not")
         print(f"match the actual uploaded files. Report this as a bug.")
 
