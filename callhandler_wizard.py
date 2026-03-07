@@ -699,11 +699,15 @@ def build_graph(call_handlers, interview_handlers, routing_rules, session, host,
         # Menu entries
         menu_entries = fetch_menu_entries(session, host, oid, name)
         has_timeout_key = False
+        unlocked_keys = []
         for entry in menu_entries:
             action = str(entry.get("Action", "0"))
             key = entry.get("TouchtoneKey", "?")
+            locked = str(entry.get("Locked", "true")).lower() == "true"
             if key == "*":
                 has_timeout_key = action != ACTION_IGNORE
+            if not locked and action != ACTION_IGNORE:
+                unlocked_keys.append(key)
             if action == ACTION_IGNORE:
                 continue
             target_id = entry.get("TargetHandlerObjectId", "")
@@ -718,6 +722,9 @@ def build_graph(call_handlers, interview_handlers, routing_rules, session, host,
         active_keys = [e for e in menu_entries if str(e.get("Action", "0")) != ACTION_IGNORE]
         if active_keys and not has_timeout_key:
             nodes[oid]["warnings"].append("No timeout key (*) configured — callers who press nothing have no path")
+        # Track unlocked keys (allow extension dialing)
+        if unlocked_keys:
+            nodes[oid]["unlockedKeys"] = unlocked_keys
 
         # Transfer rules
         transfer_rules = fetch_transfer_rules(session, host, oid, name)
@@ -1564,6 +1571,10 @@ function showDetails(d) {{
 
     if (d.scheduleName) {{
         html += '<div class="detail-row"><span class="detail-label">Schedule</span><span class="detail-value">' + esc(d.scheduleName) + '</span></div>';
+    }}
+
+    if (d.unlockedKeys && d.unlockedKeys.length) {{
+        html += '<div class="detail-row" style="padding:4px 0; color:#2ecc71; font-size:12px;">&#9742; Extension dialing — unlocked keys: <strong>' + d.unlockedKeys.map(k => esc(k)).join(', ') + '</strong></div>';
     }}
 
     if (d.warnings && d.warnings.length) {{
@@ -2568,6 +2579,14 @@ function createCard(node, isEntry) {{
                 '<br><audio controls preload="none" style="width:100%; height:28px; margin-top:2px;"><source src="' + esc(a.url) + '" type="audio/wav"></audio>';
             card.appendChild(row);
         }});
+    }}
+
+    // Unlocked keys (extension dialing)
+    if (node.unlockedKeys && node.unlockedKeys.length) {{
+        const row = document.createElement("div");
+        row.style.cssText = "padding: 6px 16px; background: #1a2a1a; border-bottom: 1px solid #1a3a1a; color: #2ecc71; font-size: 12px;";
+        row.innerHTML = '&#9742; Extension dialing enabled — unlocked keys: ' + node.unlockedKeys.map(k => '<strong>' + esc(k) + '</strong>').join(', ');
+        card.appendChild(row);
     }}
 
     // Warnings
