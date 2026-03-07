@@ -555,17 +555,23 @@ def download_audio_files(session, nodes, site_dir):
                     with open(local_path, "wb") as f:
                         for chunk in resp.iter_content(8192):
                             f.write(chunk)
-                    a["url"] = f"audio/{filename}"
-                    fmt_tag, codec_name = _detect_wav_codec(local_path)
-                    a["codec"] = codec_name
-                    codec_counts[codec_name] = codec_counts.get(codec_name, 0) + 1
-                    # Flag codecs that browsers can't play
-                    if fmt_tag and fmt_tag not in (1, 6, 7):
-                        a["codecWarning"] = True
+                    file_size = os.path.getsize(local_path)
+                    if file_size > 100:  # More than just a WAV header
+                        a["url"] = f"audio/{filename}"
+                        fmt_tag, codec_name = _detect_wav_codec(local_path)
+                        a["codec"] = codec_name
+                        codec_counts[codec_name] = codec_counts.get(codec_name, 0) + 1
+                        if fmt_tag and fmt_tag not in (1, 6, 7):
+                            a["codecWarning"] = True
+                    else:
+                        a["noAudio"] = True
+                        os.remove(local_path)
                     downloaded += 1
                 else:
+                    a["noAudio"] = True
                     failed += 1
             except Exception:
+                a["noAudio"] = True
                 failed += 1
             print(f"  Audio: {downloaded + failed}/{total} {'downloaded' if not failed else f'({failed} failed)'}", end="\r")
     result = f"  Audio: {downloaded} downloaded"
@@ -898,15 +904,18 @@ def build_graph(call_handlers, interview_handlers, routing_rules, session, host,
             play_what = str(gr.get("PlayWhat", ""))  # 0=nothing, 1=default/uploaded, 2=custom recording
             gr_schedule = GREETING_SCHEDULE.get(greeting_name, "always")
             enabled = str(gr.get("Enabled", "true")).lower() == "true"
-            # Audio: include any greeting with a recording (PlayWhat 1 or 2)
+            # Audio: include any greeting with a recording (PlayWhat 1=system default, 2=personal recording)
             if play_what in ("1", "2"):
                 audio_url = greeting_audio_url(host, oid, greeting_name, language_code)
-                nodes[oid]["audio"].append({
+                audio_entry = {
                     "greeting": greeting_name,
                     "url": audio_url,
                     "schedule": gr_schedule,
                     "enabled": enabled,
-                })
+                }
+                if play_what == "1":
+                    audio_entry["systemDefault"] = True
+                nodes[oid]["audio"].append(audio_entry)
             # Warn on alternate greeting enabled (overrides standard)
             if greeting_name == "Alternate" and enabled:
                 nodes[oid]["warnings"].append("Alternate greeting is enabled (overrides Standard)")
@@ -1062,6 +1071,7 @@ NAV_PAGES = [
     ("callhandler_report.html", "Handlers"),
     ("schedules.html", "Schedules"),
     ("test_times.html", "Test Times"),
+    ("audit.html", "Audit"),
 ]
 
 
@@ -1723,8 +1733,14 @@ function showDetails(d) {{
         html += '<h3 style="margin-top:12px;">Audio</h3>';
         d.audio.forEach(a => {{
             const disTag = a.enabled === false ? ' <span style="color:#e74c3c; font-size:10px;">(disabled)</span>' : '';
-            html += '<div class="detail-row" style="padding:4px 0;"><span style="color:#1abc9c; font-size:12px;">&#9835; ' + esc(a.greeting) + disTag + '</span><br>' +
-                '<audio controls preload="none" style="width:100%; max-width:200px; height:32px; margin-top:2px; color-scheme:dark;"><source src="' + esc(a.url) + '" type="audio/wav"></audio></div>';
+            const sysTag = a.systemDefault ? ' <span style="color:#e67e22; font-size:10px;">(system default)</span>' : '';
+            const codecTag = a.codecWarning ? ' <span style="color:#e67e22; font-size:10px;" title="' + esc(a.codec) + ' — may not play in browser">&#9888; ' + esc(a.codec) + '</span>' : '';
+            if (a.noAudio) {{
+                html += '<div class="detail-row" style="padding:4px 0;"><span style="color:#1abc9c; font-size:12px;">&#9835; ' + esc(a.greeting) + disTag + sysTag + '</span> <span style="color:#666; font-size:11px;">No audio file</span></div>';
+            }} else {{
+                html += '<div class="detail-row" style="padding:4px 0;"><span style="color:#1abc9c; font-size:12px;">&#9835; ' + esc(a.greeting) + disTag + sysTag + codecTag + '</span><br>' +
+                    '<audio controls preload="none" style="width:100%; max-width:200px; height:32px; margin-top:2px; color-scheme:dark;"><source src="' + esc(a.url) + '" type="audio/wav"></audio></div>';
+            }}
         }});
     }}
 
@@ -2105,9 +2121,18 @@ function renderTable() {{
 
         const audioList = n.audio || [];
         const audioHtml = audioList.length
-            ? audioList.map(a => '<span class="audio-link">' + esc(a.greeting) + '</span>' + schedTag(a.schedule) +
-                (a.enabled === false ? ' <span style="color:#e74c3c; font-size:10px;">(disabled)</span>' : '') +
-                '<br><audio controls preload="none" style="width:200px; height:32px; color-scheme:dark;"><source src="' + esc(a.url) + '" type="audio/wav"></audio>').join("<br>")
+            ? audioList.map(a => {{
+                let h = '<span class="audio-link">' + esc(a.greeting) + '</span>' + schedTag(a.schedule) +
+                    (a.enabled === false ? ' <span style="color:#e74c3c; font-size:10px;">(disabled)</span>' : '') +
+                    (a.systemDefault ? ' <span style="color:#e67e22; font-size:10px;">(system default)</span>' : '');
+                if (a.noAudio) {{
+                    h += ' <span style="color:#666; font-size:11px;">No audio file</span>';
+                }} else {{
+                    h += (a.codecWarning ? ' <span style="color:#e67e22; font-size:10px;" title="' + esc(a.codec) + ' — may not play in browser">&#9888; ' + esc(a.codec) + '</span>' : '') +
+                        '<br><audio controls preload="none" style="width:200px; height:32px; color-scheme:dark;"><source src="' + esc(a.url) + '" type="audio/wav"></audio>';
+                }}
+                return h;
+            }}).join("<br>")
             : '<span class="muted">&mdash;</span>';
 
         // Schedule name for handlers, conditions for routing rules
@@ -2197,9 +2222,18 @@ function renderCallFlowTrees(activeEdges) {{
             if (!node || !node.audio) return [];
             if (!node.audio.length) return [];
             const prefix = "  ".repeat(indent);
-            return node.audio.map(a => prefix + '<span class="audio-link">&#9835; ' + esc(a.greeting) + ' greeting</span>' + schedTag(a.schedule) +
-                (a.enabled === false ? ' <span style="color:#e74c3c; font-size:10px;">(disabled)</span>' : '') +
-                '<br>' + prefix + '<audio controls preload="none" style="width:200px; height:32px; color-scheme:dark;"><source src="' + esc(a.url) + '" type="audio/wav"></audio>');
+            return node.audio.map(a => {{
+                let h = prefix + '<span class="audio-link">&#9835; ' + esc(a.greeting) + ' greeting</span>' + schedTag(a.schedule) +
+                    (a.enabled === false ? ' <span style="color:#e74c3c; font-size:10px;">(disabled)</span>' : '') +
+                    (a.systemDefault ? ' <span style="color:#e67e22; font-size:10px;">(system default)</span>' : '');
+                if (a.noAudio) {{
+                    h += ' <span style="color:#666; font-size:11px;">No audio file</span>';
+                }} else {{
+                    h += (a.codecWarning ? ' <span style="color:#e67e22; font-size:10px;">&#9888; ' + esc(a.codec) + '</span>' : '') +
+                        '<br>' + prefix + '<audio controls preload="none" style="width:200px; height:32px; color-scheme:dark;"><source src="' + esc(a.url) + '" type="audio/wav"></audio>';
+                }}
+                return h;
+            }});
         }}
 
         let lines = [];
@@ -2707,11 +2741,18 @@ function createCard(node, isEntry) {{
             const row = document.createElement("div");
             row.className = "audio-row";
             const gUrl = greetingUrl(node.id, a.greeting);
-            row.innerHTML = '&#9835; <span class="audio-badge">' + esc(a.greeting) + ' greeting</span>' +
+            let audioContent = '&#9835; <span class="audio-badge">' + esc(a.greeting) + ' greeting</span>' +
                 (gUrl ? ' <a href="' + esc(gUrl) + '" target="_blank" style="color:#888; font-size:10px; text-decoration:none;" title="Edit in Unity">&#9881;</a>' : '') +
                 schedTag(a.schedule) +
                 (a.enabled === false ? ' <span style="color:#e74c3c; font-size:10px;">(disabled)</span>' : '') +
-                '<br><audio controls preload="none" style="width:100%; max-width:200px; height:32px; margin-top:2px; color-scheme:dark;"><source src="' + esc(a.url) + '" type="audio/wav"></audio>';
+                (a.systemDefault ? ' <span style="color:#e67e22; font-size:10px;">(system default)</span>' : '');
+            if (a.noAudio) {{
+                audioContent += ' <span style="color:#666; font-size:11px;">No audio file</span>';
+            }} else {{
+                audioContent += (a.codecWarning ? ' <span style="color:#e67e22; font-size:10px;" title="' + esc(a.codec) + ' — may not play in browser">&#9888; ' + esc(a.codec) + '</span>' : '') +
+                    '<br><audio controls preload="none" style="width:100%; max-width:200px; height:32px; margin-top:2px; color-scheme:dark;"><source src="' + esc(a.url) + '" type="audio/wav"></audio>';
+            }}
+            row.innerHTML = audioContent;
             card.appendChild(row);
         }});
     }}
@@ -3374,6 +3415,279 @@ function copyDayTable(day, btn, label) {{
 </html>'''
 
 
+def generate_audit_html(nodes, edges, holiday_audit, site_name="", host=""):
+    title_prefix = f"{site_name} — " if site_name else ""
+
+    # Build categorized audit data for JSON embedding
+    handler_warnings = []
+    for n in nodes:
+        if n.get("type") != "callhandler":
+            continue
+        ws = n.get("warnings", [])
+        if ws:
+            handler_warnings.append({
+                "id": n["id"],
+                "name": n.get("name", ""),
+                "extension": n.get("extension", ""),
+                "warnings": ws,
+            })
+
+    codec_warnings = []
+    system_default_audio = []
+    no_audio_items = []
+    for n in nodes:
+        for a in n.get("audio", []):
+            if a.get("codecWarning"):
+                codec_warnings.append({
+                    "handler": n.get("name", ""),
+                    "id": n["id"],
+                    "greeting": a.get("greeting", ""),
+                    "codec": a.get("codec", "Unknown"),
+                })
+            if a.get("systemDefault"):
+                system_default_audio.append({
+                    "handler": n.get("name", ""),
+                    "id": n["id"],
+                    "greeting": a.get("greeting", ""),
+                    "enabled": a.get("enabled", True),
+                })
+            if a.get("noAudio") and a.get("greeting") == "Standard" and a.get("enabled", True):
+                no_audio_items.append({
+                    "handler": n.get("name", ""),
+                    "id": n["id"],
+                })
+
+    orphans = [{"name": n["name"], "id": n["id"]} for n in nodes if n.get("classification") == "orphan"]
+    unreachable = [{"name": n["name"], "id": n["id"]} for n in nodes if n.get("classification") == "unreachable"]
+    dead_ends = [{"name": n["name"], "id": n["id"]} for n in nodes if n.get("classification") == "deadend"]
+
+    report_data = json.dumps({
+        "host": host,
+        "siteName": site_name,
+        "handlerWarnings": handler_warnings,
+        "holidayAudit": holiday_audit or [],
+        "codecWarnings": codec_warnings,
+        "systemDefaultAudio": system_default_audio,
+        "noAudioItems": no_audio_items,
+        "orphans": orphans,
+        "unreachable": unreachable,
+        "deadEnds": dead_ends,
+    })
+
+    return f'''<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{title_prefix}Audit Results</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='12' fill='%231a1a2e'/><path d='M16 20a4 4 0 014-4h8a4 4 0 014 4v24a4 4 0 01-4 4h-8a4 4 0 01-4-4z' fill='%23e94560'/><circle cx='24' cy='42' r='2' fill='%231a1a2e'/><path d='M36 28h10m0 0l-4-4m4 4l-4 4' stroke='%232ecc71' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/><path d='M36 38h10m0 0l-4-4m4 4l-4 4' stroke='%233498db' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/></svg>">
+<style>
+* {{ margin: 0; padding: 0; box-sizing: border-box; }}
+body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #1a1a2e; color: #e0e0e0; padding: 24px; }}
+h1 {{ color: #e94560; margin-bottom: 4px; }}
+.subtitle {{ color: #888; font-size: 14px; margin-bottom: 24px; }}
+h2 {{ color: #e94560; margin: 28px 0 10px 0; font-size: 18px; border-bottom: 1px solid #0f3460; padding-bottom: 6px; display: flex; align-items: center; gap: 10px; }}
+.badge {{ font-size: 11px; padding: 2px 8px; border-radius: 10px; font-weight: 700; }}
+.badge-critical {{ background: #e74c3c; color: #fff; }}
+.badge-warning {{ background: #e67e22; color: #fff; }}
+.badge-info {{ background: #2ecc71; color: #fff; }}
+.badge-ok {{ background: #555; color: #ccc; }}
+table {{ width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 13px; }}
+th {{ background: #16213e; color: #e94560; text-align: left; padding: 8px 12px; position: sticky; top: 0; border-bottom: 2px solid #0f3460; }}
+td {{ padding: 6px 12px; border-bottom: 1px solid #0f3460; vertical-align: top; }}
+tr:hover {{ background: #16213e; }}
+.muted {{ color: #555; }}
+a {{ color: #1abc9c; text-decoration: none; }}
+a:hover {{ text-decoration: underline; }}
+.level-critical {{ color: #e74c3c; font-weight: 700; }}
+.level-warning {{ color: #e67e22; font-weight: 700; }}
+.level-info {{ color: #2ecc71; }}
+.summary-bar {{ display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 24px; }}
+.summary-card {{ background: #16213e; border: 1px solid #0f3460; border-radius: 6px; padding: 14px 20px; min-width: 140px; }}
+.summary-card .count {{ font-size: 28px; font-weight: 700; }}
+.summary-card .label {{ font-size: 12px; color: #888; margin-top: 2px; }}
+.summary-card.critical .count {{ color: #e74c3c; }}
+.summary-card.warning .count {{ color: #e67e22; }}
+.summary-card.clean .count {{ color: #2ecc71; }}
+.section-empty {{ color: #555; font-style: italic; padding: 8px 0; font-size: 13px; }}
+.back-to-top {{ position: fixed; bottom: 16px; left: 16px; padding: 8px 14px; background: #0f3460; border: 1px solid #0f3460; color: #e0e0e0; cursor: pointer; border-radius: 4px; font-size: 12px; z-index: 100; text-decoration: none; }}
+.back-to-top:hover {{ background: #1a1a4e; border-color: #e94560; }}
+</style>
+</head>
+<body>
+<h1>{title_prefix}Audit Results</h1>
+<p class="subtitle">All findings from the call handler analysis, categorized by type.</p>
+
+<div class="summary-bar" id="summaryBar"></div>
+
+<h2 id="sec-warnings">Misconfiguration Warnings <span id="badge-warnings"></span></h2>
+<div id="warningsSection"></div>
+
+<h2 id="sec-holidays">Holiday Calendar <span id="badge-holidays"></span></h2>
+<div id="holidaysSection"></div>
+
+<h2 id="sec-classification">Classification Concerns <span id="badge-classification"></span></h2>
+<div id="classificationSection"></div>
+
+<h2 id="sec-audio">Audio Issues <span id="badge-audio"></span></h2>
+<div id="audioSection"></div>
+
+<h2 id="sec-sysdefault">System Default Greetings <span id="badge-sysdefault"></span></h2>
+<div id="sysDefaultSection"></div>
+
+<script>
+const data = {report_data};
+
+function esc(s) {{
+    const d = document.createElement("div");
+    d.textContent = s || "";
+    return d.innerHTML;
+}}
+
+function adminLink(id) {{
+    if (!data.host) return "";
+    return data.host + "/cuadmin/callhandler.do?op=read&objectId=" + id;
+}}
+
+function handlerLink(name, id) {{
+    const url = adminLink(id);
+    return url ? '<a href="' + url + '" target="_blank">' + esc(name) + '</a>' : esc(name);
+}}
+
+function badge(count, level) {{
+    if (!count) return '<span class="badge badge-ok">0</span>';
+    const cls = level === "critical" ? "badge-critical" : level === "warning" ? "badge-warning" : "badge-info";
+    return '<span class="badge ' + cls + '">' + count + '</span>';
+}}
+
+// Summary counts
+const totalWarnings = data.handlerWarnings.reduce((s, h) => s + h.warnings.length, 0);
+const holidayCritical = data.holidayAudit.filter(f => f.level === "critical").length;
+const holidayWarnings = data.holidayAudit.filter(f => f.level === "warning").length;
+const classificationCount = data.orphans.length + data.unreachable.length + data.deadEnds.length;
+const audioIssues = data.codecWarnings.length + data.noAudioItems.length;
+const sysDefaultCount = data.systemDefaultAudio.length;
+
+const totalIssues = totalWarnings + holidayCritical + holidayWarnings + classificationCount + audioIssues;
+
+// Summary bar
+(function() {{
+    const bar = document.getElementById("summaryBar");
+    const cards = [
+        {{ count: totalIssues, label: "Total Issues", cls: totalIssues > 0 ? (holidayCritical > 0 ? "critical" : "warning") : "clean" }},
+        {{ count: totalWarnings, label: "Handler Warnings", cls: totalWarnings > 0 ? "warning" : "clean" }},
+        {{ count: holidayCritical + holidayWarnings, label: "Holiday Issues", cls: holidayCritical > 0 ? "critical" : (holidayWarnings > 0 ? "warning" : "clean") }},
+        {{ count: classificationCount, label: "Classification", cls: classificationCount > 0 ? "warning" : "clean" }},
+        {{ count: audioIssues, label: "Audio Issues", cls: audioIssues > 0 ? "warning" : "clean" }},
+        {{ count: sysDefaultCount, label: "System Default", cls: sysDefaultCount > 0 ? "warning" : "clean" }},
+    ];
+    bar.innerHTML = cards.map(c =>
+        '<div class="summary-card ' + c.cls + '"><div class="count">' + c.count + '</div><div class="label">' + c.label + '</div></div>'
+    ).join("");
+}})();
+
+// Section badges
+document.getElementById("badge-warnings").innerHTML = badge(totalWarnings, "warning");
+document.getElementById("badge-holidays").innerHTML = badge(holidayCritical + holidayWarnings, holidayCritical > 0 ? "critical" : "warning");
+document.getElementById("badge-classification").innerHTML = badge(classificationCount, "warning");
+document.getElementById("badge-audio").innerHTML = badge(audioIssues, "warning");
+document.getElementById("badge-sysdefault").innerHTML = badge(sysDefaultCount, "info");
+
+// Handler warnings
+(function() {{
+    const el = document.getElementById("warningsSection");
+    if (!data.handlerWarnings.length) {{
+        el.innerHTML = '<p class="section-empty">No misconfigurations detected.</p>';
+        return;
+    }}
+    let html = '<table><thead><tr><th>Handler</th><th>Extension</th><th>Warning</th></tr></thead><tbody>';
+    data.handlerWarnings.forEach(h => {{
+        h.warnings.forEach((w, i) => {{
+            html += '<tr><td>' + (i === 0 ? handlerLink(h.name, h.id) : '') + '</td><td>' + (i === 0 ? esc(h.extension) : '') + '</td><td class="level-warning">' + esc(w) + '</td></tr>';
+        }});
+    }});
+    html += '</tbody></table>';
+    el.innerHTML = html;
+}})();
+
+// Holiday audit
+(function() {{
+    const el = document.getElementById("holidaysSection");
+    if (!data.holidayAudit.length) {{
+        el.innerHTML = '<p class="section-empty">No holiday audit findings.</p>';
+        return;
+    }}
+    let html = '<table><thead><tr><th>Level</th><th>Finding</th></tr></thead><tbody>';
+    data.holidayAudit.forEach(f => {{
+        const cls = f.level === "critical" ? "level-critical" : f.level === "warning" ? "level-warning" : "level-info";
+        const tag = f.level === "critical" ? "CRITICAL" : f.level === "warning" ? "WARNING" : "OK";
+        html += '<tr><td class="' + cls + '">' + tag + '</td><td>' + esc(f.message) + '</td></tr>';
+    }});
+    html += '</tbody></table>';
+    el.innerHTML = html;
+}})();
+
+// Classification
+(function() {{
+    const el = document.getElementById("classificationSection");
+    if (!classificationCount) {{
+        el.innerHTML = '<p class="section-empty">All handlers are reachable and connected.</p>';
+        return;
+    }}
+    let html = '<table><thead><tr><th>Handler</th><th>Classification</th></tr></thead><tbody>';
+    data.orphans.forEach(n => {{
+        html += '<tr><td>' + handlerLink(n.name, n.id) + '</td><td class="level-warning">True Orphan — no connections at all</td></tr>';
+    }});
+    data.unreachable.forEach(n => {{
+        html += '<tr><td>' + handlerLink(n.name, n.id) + '</td><td class="level-warning">Unreachable Subtree — has outgoing edges but nothing routes to it</td></tr>';
+    }});
+    data.deadEnds.forEach(n => {{
+        html += '<tr><td>' + handlerLink(n.name, n.id) + '</td><td class="level-warning">Dead End — has incoming edges but callers have nowhere to go</td></tr>';
+    }});
+    html += '</tbody></table>';
+    el.innerHTML = html;
+}})();
+
+// Audio issues
+(function() {{
+    const el = document.getElementById("audioSection");
+    if (!audioIssues) {{
+        el.innerHTML = '<p class="section-empty">No audio issues detected.</p>';
+        return;
+    }}
+    let html = '<table><thead><tr><th>Handler</th><th>Greeting</th><th>Issue</th></tr></thead><tbody>';
+    data.noAudioItems.forEach(n => {{
+        html += '<tr><td>' + handlerLink(n.handler, n.id) + '</td><td>Standard</td><td class="level-warning">No audio file — callers will hear silence or system default</td></tr>';
+    }});
+    data.codecWarnings.forEach(c => {{
+        html += '<tr><td>' + handlerLink(c.handler, c.id) + '</td><td>' + esc(c.greeting) + '</td><td class="level-warning">' + esc(c.codec) + ' — not playable in browser</td></tr>';
+    }});
+    html += '</tbody></table>';
+    el.innerHTML = html;
+}})();
+
+// System default audio
+(function() {{
+    const el = document.getElementById("sysDefaultSection");
+    if (!data.systemDefaultAudio.length) {{
+        el.innerHTML = '<p class="section-empty">All greetings use personal recordings.</p>';
+        return;
+    }}
+    let html = '<table><thead><tr><th>Handler</th><th>Greeting</th><th>Status</th></tr></thead><tbody>';
+    data.systemDefaultAudio.forEach(a => {{
+        const status = a.enabled ? "Enabled — using system default recording" : "Disabled — using system default recording";
+        html += '<tr><td>' + handlerLink(a.handler, a.id) + '</td><td>' + esc(a.greeting) + '</td><td class="level-info">' + status + '</td></tr>';
+    }});
+    html += '</tbody></table>';
+    el.innerHTML = html;
+}})();
+</script>
+<a href="#" class="back-to-top">&uarr; Top</a>
+{floating_nav_html("audit.html")}
+</body>
+</html>'''
+
+
 def generate_index_html(site_name=""):
     title_prefix = f"{site_name} — " if site_name else ""
     return f'''<!DOCTYPE html>
@@ -3418,6 +3732,10 @@ h1 {{ color: #e94560; font-size: 24px; margin-bottom: 8px; }}
 <a href="test_times.html" class="card">
 <h2>Test Times</h2>
 <p>Unique times to call each day of the week to verify all schedule transitions route correctly.</p>
+</a>
+<a href="audit.html" class="card">
+<h2>Audit Results</h2>
+<p>Misconfiguration warnings, holiday calendar audit, classification concerns, and audio issues.</p>
 </a>
 </div>
 </body>
@@ -3631,6 +3949,13 @@ def cmd_generate(args):
         if audio_count:
             print("\nDownloading greeting audio files...")
             download_audio_files(session, nodes, site_dir)
+            # Warn if Standard greeting has no audio (the one callers actually hear)
+            for n in nodes:
+                if n.get("type") != "callhandler":
+                    continue
+                for a in n.get("audio", []):
+                    if a.get("greeting") == "Standard" and a.get("noAudio") and a.get("enabled", True):
+                        n.setdefault("warnings", []).append("Standard greeting has no audio file — callers will hear silence or system default")
 
         d3_local = copy_d3(site_dir)
 
@@ -3662,11 +3987,88 @@ def cmd_generate(args):
         with open(test_path, "w", encoding="utf-8") as f:
             f.write(test_html)
 
+        audit_html_path = os.path.join(site_dir, "audit.html")
+        audit_html = generate_audit_html(nodes, edges, holiday_audit, site_name=site_name, host=host)
+        with open(audit_html_path, "w", encoding="utf-8") as f:
+            f.write(audit_html)
+
         idx_html = generate_index_html(site_name=site_name)
         with open(index_path, "w", encoding="utf-8") as f:
             f.write(idx_html)
 
+        # Write audit.log with all findings
+        audit_lines = []
+        audit_lines.append(f"Call Handler Wizard Audit — {site_name or 'Unknown Site'}")
+        audit_lines.append(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        audit_lines.append(f"{'='*60}")
+
+        # Handler warnings
+        if warned_nodes:
+            audit_lines.append(f"\nHANDLER WARNINGS ({sum(len(w) for _, w in warned_nodes)} issues across {len(warned_nodes)} handlers)")
+            audit_lines.append("-" * 40)
+            for name, warnings in warned_nodes:
+                for w in warnings:
+                    audit_lines.append(f"  [WARNING] {name}: {w}")
+
+        # Holiday audit
+        if holiday_audit:
+            audit_lines.append(f"\nHOLIDAY CALENDAR AUDIT")
+            audit_lines.append("-" * 40)
+            for finding in holiday_audit:
+                tag = "CRITICAL" if finding["level"] == "critical" else "WARNING" if finding["level"] == "warning" else "OK"
+                audit_lines.append(f"  [{tag}] {finding['message']}")
+
+        # Codec warnings
+        codec_warnings = []
+        for n in nodes:
+            for a in n.get("audio", []):
+                if a.get("codecWarning"):
+                    codec_warnings.append(f"  [WARNING] {n.get('name', '?')} — {a.get('greeting', '?')}: {a.get('codec', '?')} (not playable in browser)")
+        if codec_warnings:
+            audit_lines.append(f"\nAUDIO CODEC WARNINGS")
+            audit_lines.append("-" * 40)
+            audit_lines.extend(codec_warnings)
+
+        # Classification concerns
+        orphans = [n for n in nodes if n["classification"] == "orphan"]
+        unreachable = [n for n in nodes if n["classification"] == "unreachable"]
+        dead_ends = [n for n in nodes if n["classification"] == "deadend"]
+        if orphans or unreachable or dead_ends:
+            audit_lines.append(f"\nCLASSIFICATION CONCERNS")
+            audit_lines.append("-" * 40)
+            if orphans:
+                audit_lines.append(f"  [WARNING] {len(orphans)} true orphan(s): {', '.join(n['name'] for n in orphans)}")
+            if unreachable:
+                audit_lines.append(f"  [WARNING] {len(unreachable)} unreachable subtree(s): {', '.join(n['name'] for n in unreachable)}")
+            if dead_ends:
+                audit_lines.append(f"  [WARNING] {len(dead_ends)} dead end(s): {', '.join(n['name'] for n in dead_ends)}")
+
+        # Summary
+        total_warnings = sum(len(w) for _, w in warned_nodes) + len(codec_warnings)
+        total_critical = sum(1 for f in holiday_audit if f["level"] == "critical") if holiday_audit else 0
+        has_findings = total_warnings > 0 or total_critical > 0 or orphans or unreachable or dead_ends
+
+        audit_lines.append(f"\n{'='*60}")
+        if has_findings:
+            audit_lines.append(f"RESULT: AUDIT FINDINGS DETECTED")
+            audit_lines.append(f"  {total_critical} critical, {total_warnings} warnings, "
+                             f"{len(orphans)} orphans, {len(unreachable)} unreachable, {len(dead_ends)} dead ends")
+        else:
+            audit_lines.append(f"RESULT: PASS — no issues detected")
+        audit_lines.append(f"{'='*60}")
+
+        audit_path = os.path.join(site_dir, "audit.log")
+        with open(audit_path, "w", encoding="utf-8") as f:
+            f.write("\n".join(audit_lines) + "\n")
+
         print(f"Done! Reports written to {site_dir}/")
+
+        # Final audit banner — make it obvious in PowerShell
+        if has_findings:
+            print(f"\n{'!'*60}")
+            print(f"  AUDIT FINDINGS: {total_critical} critical, {total_warnings} warnings")
+            print(f"  See {audit_path}")
+            print(f"{'!'*60}")
 
         webbrowser.open(f"file://{os.path.abspath(index_path)}")
     finally:

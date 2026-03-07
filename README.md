@@ -34,6 +34,7 @@ Output is written to `reports/<SiteName>_<timestamp>/` containing:
 | `callflow.html` | Dedicated call flow view with deep linking |
 | `schedules.html` | Business hour and holiday schedule details |
 | `test_times.html` | Recommended test times for each day of the week |
+| `audit.html` | Categorized audit findings: warnings, holidays, classification, audio |
 | `audio/` | Downloaded greeting audio WAV files for inline playback |
 | `d3.v7.min.js` | Local D3 copy for offline use |
 | `run.log` | Console output log for the generation run |

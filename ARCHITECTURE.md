@@ -187,6 +187,7 @@ All HTML files are written to `reports/<SiteName>_<timestamp>/`. Pages are self-
 | `callflow.html` | `generate_callflow_html` | None (pure HTML/CSS/JS, supports deep linking) |
 | `schedules.html` | `generate_schedules_html` | None |
 | `test_times.html` | `generate_test_times_html` | None |
+| `audit.html` | `generate_audit_html` | None (categorized audit findings) |
 
 ### Shared Features Across Pages
 
@@ -195,6 +196,7 @@ All HTML files are written to `reports/<SiteName>_<timestamp>/`. Pages are self-
 - **CUC admin deep links** -- `{host}/cuadmin/{type}.do?op=read&objectId={id}` for handlers and greetings
 - **Schedule badges** -- visual indicators of which schedule context applies to edges and audio
 - **Greeting enabled/disabled state** -- red "(disabled)" indicator on greeting audio entries
+- **System default indicator** -- orange "(system default)" on greetings using PlayWhat=1 instead of personal recordings
 
 ## Data Collection Details
 
