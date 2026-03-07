@@ -579,35 +579,29 @@ def build_graph(call_handlers, interview_handlers, routing_rules, session, host)
 
 
 D3_CDN_URL = "https://d3js.org/d3.v7.min.js"
+D3_FILENAME = "d3.v7.min.js"
 
-_d3_cache = None
 
-def fetch_d3_source():
-    """Download D3.js and cache it for inline embedding."""
-    global _d3_cache
-    if _d3_cache is not None:
-        return _d3_cache
+def download_d3(site_dir):
+    """Download D3.js into the report directory for offline use."""
+    dest = os.path.join(site_dir, D3_FILENAME)
     try:
-        print("Downloading D3.js for offline embedding...")
+        print("Downloading D3.js for offline use...")
         resp = requests.get(D3_CDN_URL, timeout=15)
         resp.raise_for_status()
-        _d3_cache = resp.text
-        print("  D3.js downloaded successfully")
-        return _d3_cache
+        with open(dest, "w", encoding="utf-8") as f:
+            f.write(resp.text)
+        print(f"  Saved {D3_FILENAME}")
+        return True
     except Exception as e:
         print(f"  Warning: Could not download D3.js: {e}")
         print("  Graph will require internet access to load D3 from CDN")
-        _d3_cache = ""
-        return ""
+        return False
 
 
-def generate_html(nodes, edges):
+def generate_html(nodes, edges, d3_local=False):
     graph_data = json.dumps({"nodes": nodes, "links": edges})
-    d3_source = fetch_d3_source()
-    if d3_source:
-        d3_tag = f"<script>{d3_source}</script>"
-    else:
-        d3_tag = f'<script src="{D3_CDN_URL}"></script>'
+    d3_tag = f'<script src="{D3_FILENAME}"></script>' if d3_local else f'<script src="{D3_CDN_URL}"></script>'
     return f'''<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1428,11 +1422,13 @@ def cmd_generate(args):
     for cls, count in sorted(classifications.items()):
         print(f"  {cls}: {count}")
 
+    d3_local = download_d3(site_dir)
+
     map_path = os.path.join(site_dir, "callhandler_map.html")
     report_path = os.path.join(site_dir, "callhandler_report.html")
 
     print(f"\nGenerating {map_path}...")
-    html = generate_html(nodes, edges)
+    html = generate_html(nodes, edges, d3_local=d3_local)
     with open(map_path, "w", encoding="utf-8") as f:
         f.write(html)
 
