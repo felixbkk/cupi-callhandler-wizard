@@ -1255,6 +1255,14 @@ function debugOrphans() {{
 
     out.textContent = JSON.stringify(report, null, 2);
 }}
+function copyDebugOutput() {{
+    const text = document.getElementById("debugOutput").textContent;
+    navigator.clipboard.writeText(text).then(() => {{
+        const btn = document.getElementById("copyBtn");
+        btn.textContent = "Copied!";
+        setTimeout(() => btn.textContent = "Copy Output", 1500);
+    }});
+}}
 </script>
 
 <button class="debug-toggle" onclick="toggleDebug()">Debug Tools</button>
@@ -1265,6 +1273,7 @@ function debugOrphans() {{
 <button class="debug-btn" onclick="debugLookup()">Lookup Node</button>
 <button class="debug-btn" onclick="debugOrphans()">Find Problems</button>
 <button class="debug-btn" onclick="debugDumpAll()">Dump All Data</button>
+<button class="debug-btn" onclick="copyDebugOutput()" id="copyBtn">Copy Output</button>
 </div>
 <pre id="debugOutput">Use the tools above to inspect raw data.
 
