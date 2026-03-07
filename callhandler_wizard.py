@@ -379,10 +379,40 @@ def fetch_schedules(session, host):
 
 
 # -- Action type constants from CUPI --
-# 0 = Ignore, 1 = Hangup, 2 = Goto (transfer to handler), 3 = Error,
-# 4 = Take Message, 5 = Skip Greeting, 6 = Transfer to alternative contact number
-# For after-greeting: action 2 with a TargetHandlerObjectId means route to another handler
-ACTION_GOTO = "2"
+ACTION_IGNORE = "0"
+ACTION_HANGUP = "1"
+ACTION_GOTO = "2"       # Route to handler/conversation
+ACTION_ERROR = "3"
+ACTION_TAKE_MSG = "4"
+ACTION_SKIP_GREETING = "5"
+ACTION_RESTART_GREETING = "6"
+ACTION_XFER_ALT = "7"   # Transfer to alternate contact number
+ACTION_ROUTE_NEXT = "8" # Route from next call routing rule
+
+ACTION_LABELS = {
+    ACTION_IGNORE: "Ignore",
+    ACTION_HANGUP: "Hangup",
+    ACTION_GOTO: "Goto",
+    ACTION_ERROR: "Error",
+    ACTION_TAKE_MSG: "Take Message",
+    ACTION_SKIP_GREETING: "Skip Greeting",
+    ACTION_RESTART_GREETING: "Restart Greeting",
+    ACTION_XFER_ALT: "Transfer Alt Contact",
+    ACTION_ROUTE_NEXT: "Route Next Rule",
+}
+
+# TargetConversation values — what the caller gets routed to
+CONVERSATION_LABELS = {
+    "PHTransfer": "Transfer",
+    "PHGreeting": "Greeting",
+    "PHInterview": "Interview",
+    "AD": "Directory",
+    "SubSignIn": "Sign In",
+    "SubSysTransfer": "Sys Transfer",
+    "SystemTransfer": "Sys Transfer",
+    "BroadcastMessageAdministrator": "Broadcast Admin",
+    "GreetingAdministrator": "Greeting Admin",
+}
 
 # Schedule context for transfer rules (by RuleIndex) and greetings (by GreetingType)
 TRANSFER_SCHEDULE = {
@@ -504,19 +534,57 @@ def build_graph(call_handlers, interview_handlers, routing_rules, session, host,
             target = entry.get("TargetHandlerObjectId", "")
             key = entry.get("TouchtoneKey", "?")
             action = str(entry.get("Action", "0"))
-            if target and action == ACTION_GOTO:
-                # Ensure target node exists (might be a handler we haven't seen)
+            conversation = entry.get("TargetConversation", "")
+            locked = str(entry.get("Locked", "false")).lower() == "true"
+
+            if action == ACTION_IGNORE:
+                continue
+
+            if action == ACTION_GOTO and target:
+                # Route to a handler — create node if unknown
                 if target not in nodes:
+                    # Infer type from conversation
+                    node_type = "callhandler"
+                    if conversation == "AD":
+                        node_type = "directory"
+                    elif conversation == "PHInterview":
+                        node_type = "interview"
+                    conv_label = CONVERSATION_LABELS.get(conversation, "")
+                    target_name = f"Unknown ({target[:8]})"
+                    if conv_label and conv_label not in ("Transfer", "Greeting"):
+                        target_name = f"{conv_label} ({target[:8]})"
                     nodes[target] = {
                         "id": target,
-                        "name": f"Unknown ({target[:8]})",
+                        "name": target_name,
                         "extension": "",
-                        "type": "callhandler",
+                        "type": node_type,
+                        "classification": "normal",
+                    }
+                conv_suffix = ""
+                if conversation and conversation not in ("PHTransfer", "PHGreeting"):
+                    conv_suffix = f" [{CONVERSATION_LABELS.get(conversation, conversation)}]"
+                edges.append({
+                    "source": oid,
+                    "target": target,
+                    "label": f"Key {key}{conv_suffix}",
+                    "schedule": "always",
+                })
+            elif action in (ACTION_HANGUP, ACTION_RESTART_GREETING, ACTION_SKIP_GREETING,
+                            ACTION_TAKE_MSG, ACTION_ROUTE_NEXT, ACTION_XFER_ALT):
+                # Terminal or self-referencing action — create a label node
+                action_label = ACTION_LABELS.get(action, f"Action {action}")
+                action_id = f"action_{oid}_{key}"
+                if action_id not in nodes:
+                    nodes[action_id] = {
+                        "id": action_id,
+                        "name": action_label,
+                        "extension": "",
+                        "type": "action",
                         "classification": "normal",
                     }
                 edges.append({
                     "source": oid,
-                    "target": target,
+                    "target": action_id,
                     "label": f"Key {key}",
                     "schedule": "always",
                 })
@@ -772,6 +840,8 @@ marker {{ fill: #666; }}
 <div class="legend-item"><span class="legend-dot" style="background:#e74c3c"></span> Dead End</div>
 <div class="legend-item"><span class="legend-dot" style="background:#9b59b6"></span> Interview Handler</div>
 <div class="legend-item"><span class="legend-dot" style="background:#1abc9c"></span> Phone Extension</div>
+<div class="legend-item"><span class="legend-dot" style="background:#f39c12"></span> Directory Handler</div>
+<div class="legend-item"><span class="legend-dot" style="background:#e74c3c"></span> Action (Hangup, etc.)</div>
 </div>
 <div id="node-details">
 <h3>Node Details</h3>
@@ -792,7 +862,9 @@ const colorMap = {{
 const typeColorOverride = {{
     interview: "#9b59b6",
     phone: "#1abc9c",
-    routingrule: "#2ecc71"
+    routingrule: "#2ecc71",
+    directory: "#f39c12",
+    action: "#e74c3c"
 }};
 
 function nodeColor(d) {{
@@ -802,7 +874,7 @@ function nodeColor(d) {{
 
 function nodeRadius(d) {{
     if (d.type === "routingrule") return 10;
-    if (d.type === "phone") return 6;
+    if (d.type === "phone" || d.type === "action") return 6;
     return 8;
 }}
 
@@ -1271,7 +1343,7 @@ const classColors = {{
     root: "#2ecc71", normal: "#3498db", orphan: "#95a5a6",
     unreachable: "#e67e22", deadend: "#e74c3c"
 }};
-const typeColors = {{ interview: "#9b59b6", phone: "#1abc9c", routingrule: "#2ecc71" }};
+const typeColors = {{ interview: "#9b59b6", phone: "#1abc9c", routingrule: "#2ecc71", directory: "#f39c12", action: "#e74c3c" }};
 const classLabels = {{
     root: "Root (Entry Point)", normal: "Normal", orphan: "True Orphan",
     unreachable: "Unreachable Subtree", deadend: "Dead End"
