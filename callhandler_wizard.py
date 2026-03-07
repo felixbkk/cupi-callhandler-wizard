@@ -1256,6 +1256,10 @@ h2 {{ color: #e94560; margin: 32px 0 12px 0; font-size: 20px; border-bottom: 1px
 .summary {{ display: flex; gap: 12px; flex-wrap: wrap; margin: 16px 0; }}
 .summary-badge {{ padding: 6px 14px; border-radius: 4px; font-size: 13px; font-weight: 600; color: #fff; }}
 .stats {{ color: #888; font-size: 14px; margin-bottom: 16px; }}
+.toc {{ display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin: 16px 0; padding: 12px 16px; background: #16213e; border: 1px solid #0f3460; border-radius: 6px; }}
+.toc-label {{ font-size: 13px; color: #888; font-weight: 600; }}
+.toc a {{ color: #1abc9c; font-size: 13px; text-decoration: none; padding: 4px 8px; border-radius: 3px; transition: background 0.2s; }}
+.toc a:hover {{ background: #0f3460; text-decoration: underline; }}
 table {{ width: 100%; border-collapse: collapse; margin-bottom: 24px; font-size: 13px; }}
 th {{ background: #16213e; color: #e94560; text-align: left; padding: 10px 12px; position: sticky; top: 0; border-bottom: 2px solid #0f3460; }}
 td {{ padding: 8px 12px; border-bottom: 1px solid #0f3460; vertical-align: top; }}
@@ -1296,7 +1300,16 @@ tr:hover {{ background: #16213e; }}
 <div id="stats" class="stats"></div>
 <div id="summary" class="summary"></div>
 
-<h2>Call Flow Schedule View</h2>
+<nav class="toc">
+<span class="toc-label">Jump to:</span>
+<a href="#schedule-view">Schedule View</a>
+<a href="#flow-trees">Call Flow Trees</a>
+<a href="#handlers">Handlers &amp; Routing</a>
+<a href="#schedules">Schedules</a>
+<a href="#holidays">Holiday Schedules</a>
+</nav>
+
+<h2 id="schedule-view">Call Flow Schedule View</h2>
 <div class="schedule-bar">
 <span class="schedule-label">Active schedule:</span>
 <button class="schedule-btn active" data-schedule="standard" onclick="setSchedule('standard')">Standard</button>
@@ -1305,10 +1318,10 @@ tr:hover {{ background: #16213e; }}
 <button class="schedule-btn" data-schedule="all" onclick="setSchedule('all')">All (raw)</button>
 </div>
 
-<h2>Call Flow Trees</h2>
+<h2 id="flow-trees">Call Flow Trees</h2>
 <div id="callFlowTrees"></div>
 
-<h2>Call Handlers &amp; Routing</h2>
+<h2 id="handlers">Call Handlers &amp; Routing</h2>
 <div class="filter-bar">
 <input type="text" id="search" placeholder="Filter by name, extension, or type..." oninput="renderTable()">
 <select id="classFilter" onchange="renderTable()">
@@ -1327,7 +1340,7 @@ tr:hover {{ background: #16213e; }}
 <tbody></tbody>
 </table>
 
-<h2>Schedules (Business Hours)</h2>
+<h2 id="schedules">Schedules (Business Hours)</h2>
 <table id="scheduleTable">
 <thead>
 <tr><th>Schedule</th><th>Day(s)</th><th>Start Time</th><th>End Time</th><th>Active</th></tr>
@@ -1335,7 +1348,7 @@ tr:hover {{ background: #16213e; }}
 <tbody></tbody>
 </table>
 
-<h2>Holiday Schedules</h2>
+<h2 id="holidays">Holiday Schedules</h2>
 <table id="holidayTable">
 <thead>
 <tr><th>Schedule</th><th>Holiday</th><th>Start Date</th><th>End Date</th></tr>
