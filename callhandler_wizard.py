@@ -578,8 +578,36 @@ def build_graph(call_handlers, interview_handlers, routing_rules, session, host)
     return list(nodes.values()), edges
 
 
+D3_CDN_URL = "https://d3js.org/d3.v7.min.js"
+
+_d3_cache = None
+
+def fetch_d3_source():
+    """Download D3.js and cache it for inline embedding."""
+    global _d3_cache
+    if _d3_cache is not None:
+        return _d3_cache
+    try:
+        print("Downloading D3.js for offline embedding...")
+        resp = requests.get(D3_CDN_URL, timeout=15)
+        resp.raise_for_status()
+        _d3_cache = resp.text
+        print("  D3.js downloaded successfully")
+        return _d3_cache
+    except Exception as e:
+        print(f"  Warning: Could not download D3.js: {e}")
+        print("  Graph will require internet access to load D3 from CDN")
+        _d3_cache = ""
+        return ""
+
+
 def generate_html(nodes, edges):
     graph_data = json.dumps({"nodes": nodes, "links": edges})
+    d3_source = fetch_d3_source()
+    if d3_source:
+        d3_tag = f"<script>{d3_source}</script>"
+    else:
+        d3_tag = f'<script src="{D3_CDN_URL}"></script>'
     return f'''<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -587,7 +615,7 @@ def generate_html(nodes, edges):
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>CUC Call Handler Routing Map</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='12' fill='%231a1a2e'/><path d='M16 20a4 4 0 014-4h8a4 4 0 014 4v24a4 4 0 01-4 4h-8a4 4 0 01-4-4z' fill='%23e94560'/><circle cx='24' cy='42' r='2' fill='%231a1a2e'/><path d='M36 28h10m0 0l-4-4m4 4l-4 4' stroke='%232ecc71' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/><path d='M36 38h10m0 0l-4-4m4 4l-4 4' stroke='%233498db' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/></svg>">
-<script src="https://d3js.org/d3.v7.min.js"></script>
+{d3_tag}
 <style>
 * {{ margin: 0; padding: 0; box-sizing: border-box; }}
 body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; height: 100vh; background: #1a1a2e; color: #e0e0e0; }}
@@ -1405,12 +1433,12 @@ def cmd_generate(args):
 
     print(f"\nGenerating {map_path}...")
     html = generate_html(nodes, edges)
-    with open(map_path, "w") as f:
+    with open(map_path, "w", encoding="utf-8") as f:
         f.write(html)
 
     print(f"Generating {report_path}...")
     table_html = generate_table_html(nodes, edges, holiday_schedules, schedules)
-    with open(report_path, "w") as f:
+    with open(report_path, "w", encoding="utf-8") as f:
         f.write(table_html)
 
     print(f"\nDone! Reports written to {site_dir}/")
