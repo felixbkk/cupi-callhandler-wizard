@@ -4,10 +4,16 @@ Connects to a Cisco Unity Connection server via the CUPI REST API and generates 
 
 ## Setup
 
-1. Install dependencies:
+Install dependencies (requires internet):
 
 ```bash
 pip install -r requirements.txt
+```
+
+**Offline install** -- all dependencies are bundled in `resources/`:
+
+```bash
+pip install --no-index --find-links=resources requests
 ```
 
 ## Usage

@@ -1256,7 +1256,10 @@ D3_FILENAME = "d3.v7.min.js"
 def copy_d3(site_dir):
     """Copy bundled D3.js into the report directory for offline use."""
     dest = os.path.join(site_dir, D3_FILENAME)
-    src = os.path.join(os.path.dirname(os.path.abspath(__file__)), D3_FILENAME)
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    src = os.path.join(script_dir, "resources", D3_FILENAME)
+    if not os.path.exists(src):
+        src = os.path.join(script_dir, D3_FILENAME)  # legacy fallback
     try:
         shutil.copy2(src, dest)
         return True
