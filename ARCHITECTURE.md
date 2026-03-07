@@ -17,11 +17,25 @@ CUC Server (CUPI REST API)
             |
             v
   +---------------------+
+  |  Extension Resolution|  fetch_users + fetch_contacts
+  |  (best-effort name   |  Builds extension -> name map
+  |   lookup for phones) |
+  +---------+-----------+
+            |
+            v
+  +---------------------+
   |   Graph Building     |  build_graph()
   |   - Nodes + edges    |  Links handlers via menu entries,
   |   - Classification   |  transfer rules, greetings
   |   - BFS reachability |  Per-schedule reachability analysis
   |   - Schedule tagging |  Tags edges with schedule context
+  |   - Warning detection|  Flags misconfigurations
+  +---------+-----------+
+            |
+            v
+  +---------------------+
+  |   Audio Download     |  download_audio_files()
+  |   (greeting WAVs)    |  Saved to audio/ for inline playback
   +---------+-----------+
             |
      +------+------+
@@ -54,6 +68,8 @@ All endpoints are read-only (GET).
 | `/vmrest/schedulesets` | Schedule set definitions |
 | `/vmrest/holidayschedules` | Holiday schedule definitions (legacy) |
 | `/vmrest/holidayschedules/{id}/holidays` | Individual holidays in a schedule |
+| `/vmrest/users` | User extensions and display names (for extension resolution) |
+| `/vmrest/contacts` | Contact extensions and display names (for extension resolution) |
 
 The `probe` command tests 40+ additional endpoints to map server capabilities.
 
@@ -65,22 +81,29 @@ The `probe` command tests 40+ additional endpoints to map server capabilities.
 
 ### Nodes
 
-Each node represents a call handler, interview handler, routing rule, or phone extension:
+Each node represents a call handler, interview handler, routing rule, phone extension, directory handler, or action node:
 
 ```python
 {
     "id": "ObjectId",
     "name": "DisplayName",
     "extension": "DtmfAccessId",
-    "type": "callhandler|interview|routingrule|phone",
+    "type": "callhandler|interview|routingrule|phone|directory|action",
     "classification": "root|normal|orphan|unreachable|deadend",
     "scheduleName": "Business Hours",
-    "audio": [{"greeting": "Standard", "url": "...", "schedule": "standard"}],
+    "audio": [{"greeting": "Standard", "url": "audio/...", "schedule": "standard", "enabled": True}],
+    "warnings": ["Alternate greeting is enabled (overrides Standard)"],
+    "unlockedKeys": ["1", "2", "3"],
+    "digitTimeoutMs": "1500",
+    "postGreeting": False,
+    "system": False,
     "reachable_standard": True,
     "reachable_offhours": True,
     "reachable_holiday": False
 }
 ```
+
+Not all fields are present on all node types. `audio`, `warnings`, `unlockedKeys`, `digitTimeoutMs`, `postGreeting`, and `system` are only on call handler nodes.
 
 ### Edges
 
@@ -90,10 +113,12 @@ Each edge represents a routing connection between nodes:
 {
     "source": "source_node_id",
     "target": "target_node_id",
-    "label": "Key 1|Xfer:0|After:Standard",
+    "label": "Key 1|Xfer:Standard (ring 4x)|After:Standard",
     "schedule": "always|standard|offhours|holiday|alternate"
 }
 ```
+
+Transfer edge labels include type and rings: `Xfer:Standard (ring 4x)` for supervised, `Xfer:Standard (release)` for release transfer.
 
 ### Schedule Tags
 
@@ -119,6 +144,25 @@ Nodes are classified after all edges are built, using BFS reachability from rout
 
 Per-schedule reachability (standard, off hours, holiday) is computed separately and stored on each node for schedule-aware filtering and the `orphans` command.
 
+## Warning Detection
+
+`build_graph()` detects common auto-attendant misconfigurations and stores them in each node's `warnings` list:
+
+| Warning | Trigger |
+|---------|---------|
+| Alternate transfer enabled | `TransferEnabled` true on Alternate rule |
+| Alternate greeting enabled | `Enabled` true on Alternate greeting |
+| Supervised transfer | `TransferType` != 0 on enabled transfer rule |
+| No timeout key (*) | No active action on * key when other keys are active |
+| After-greeting = Hangup | `AfterGreetingAction` = 1 |
+| After-greeting = Take Message | `AfterGreetingAction` = 4 |
+| After-message = Hangup | `AfterMessageAction` = 1 on call handler |
+| Menu key = Take Message | Menu entry `Action` = 4 |
+| Self-loop | Menu key routes to same handler |
+| Circular routing | A->B->A with no exit from one side |
+| Record your message | `PlayPostGreetingRecording` enabled |
+| Caller input disabled | `IgnoreDigits` true on enabled greeting with active menu keys |
+
 ## CLI Commands
 
 | Command | Function | Purpose |
@@ -133,7 +177,7 @@ Per-schedule reachability (standard, off hours, holiday) is computed separately 
 
 ## HTML Output
 
-All HTML files are written to `reports/<SiteName>_<timestamp>/`. Pages are self-contained with inline CSS/JS and embedded JSON data. They link to each other via a shared navigation bar.
+All HTML files are written to `reports/<SiteName>_<timestamp>/`. Pages are self-contained with inline CSS/JS and embedded JSON data. They link to each other via a shared floating navigation pill.
 
 | File | Generator | Dependencies |
 |------|-----------|-------------|
@@ -146,13 +190,17 @@ All HTML files are written to `reports/<SiteName>_<timestamp>/`. Pages are self-
 
 ### Shared Features Across Pages
 
+- **Floating navigation pill** -- cross-links between all report pages
+- **Dark/light mode toggle** -- persisted via localStorage (`chw-theme` key)
 - **CUC admin deep links** -- `{host}/cuadmin/{type}.do?op=read&objectId={id}` for handlers and greetings
 - **Schedule badges** -- visual indicators of which schedule context applies to edges and audio
-- **Navigation bar** -- cross-links between all report pages
+- **Greeting enabled/disabled state** -- red "(disabled)" indicator on greeting audio entries
 
 ## Data Collection Details
 
 - **Voicemail filtering** -- Handlers with numeric-only display names are filtered out during collection (these are user voicemail boxes, not auto-attendant handlers)
+- **Extension resolution** -- Users and contacts are fetched to build an extension-to-name map for resolving phone transfer targets
+- **Audio download** -- Greeting WAV files are downloaded during generation to `audio/` for inline `<audio>` playback
 - **Audio detection** -- Greetings with `PlayWhat` of 1 or 2 are included (both have uploaded audio on typical CUC servers)
 - **Smart endpoint fallback** -- Sub-resource endpoints that return 404 on first try are skipped for remaining handlers
 - **Pagination** -- All list endpoints are fetched with pagination handling
