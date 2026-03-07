@@ -849,7 +849,9 @@ marker {{ fill: #666; }}
 </div>
 <div id="sidebar">
 <h2>{title_prefix}Call Handler Map</h2>
-<a href="callhandler_report.html" style="color:#1abc9c; font-size:13px;">Switch to Table Report &rarr;</a>
+<a href="index.html" style="color:#1abc9c; font-size:13px;">Home</a> &nbsp;
+<a href="callflow.html" style="color:#1abc9c; font-size:13px;">Call Flow</a> &nbsp;
+<a href="callhandler_report.html" style="color:#1abc9c; font-size:13px;">Table Report</a>
 <div class="controls">
 <h3>Layout</h3>
 <div style="display:flex; gap:6px; flex-wrap:wrap;">
@@ -1359,7 +1361,9 @@ tr:hover {{ background: #16213e; }}
 </head>
 <body>
 <h1>{title_prefix}Call Handler Report</h1>
-<a href="callhandler_map.html" style="color:#1abc9c; font-size:13px;">&larr; Switch to Graph View</a>
+<a href="index.html" style="color:#1abc9c; font-size:13px;">Home</a> &nbsp;
+<a href="callflow.html" style="color:#1abc9c; font-size:13px;">Call Flow</a> &nbsp;
+<a href="callhandler_map.html" style="color:#1abc9c; font-size:13px;">Graph View</a>
 <div id="stats" class="stats"></div>
 <div id="summary" class="summary"></div>
 
@@ -1878,6 +1882,418 @@ function copyDebugOutput() {{
 </html>'''
 
 
+def generate_callflow_html(nodes, edges, site_name=""):
+    title_prefix = f"{site_name} — " if site_name else ""
+    report_data = json.dumps({"nodes": nodes, "edges": edges})
+    return f'''<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{title_prefix}Call Flow Explorer</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='12' fill='%231a1a2e'/><path d='M16 20a4 4 0 014-4h8a4 4 0 014 4v24a4 4 0 01-4 4h-8a4 4 0 01-4-4z' fill='%23e94560'/><circle cx='24' cy='42' r='2' fill='%231a1a2e'/><path d='M36 28h10m0 0l-4-4m4 4l-4 4' stroke='%232ecc71' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/><path d='M36 38h10m0 0l-4-4m4 4l-4 4' stroke='%233498db' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/></svg>">
+<style>
+* {{ margin: 0; padding: 0; box-sizing: border-box; }}
+body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #1a1a2e; color: #e0e0e0; }}
+.topbar {{ background: #0d1b2a; border-bottom: 1px solid #0f3460; padding: 16px 24px; display: flex; justify-content: space-between; align-items: center; }}
+.topbar h1 {{ color: #e94560; font-size: 20px; }}
+.topbar-links {{ display: flex; gap: 16px; }}
+.topbar-links a {{ color: #1abc9c; font-size: 13px; text-decoration: none; }}
+.topbar-links a:hover {{ text-decoration: underline; }}
+.controls {{ display: flex; gap: 24px; align-items: center; flex-wrap: wrap; padding: 12px 24px; background: #16213e; border-bottom: 1px solid #0f3460; }}
+.schedule-bar {{ display: flex; gap: 4px; align-items: center; }}
+.schedule-label {{ font-size: 13px; color: #888; margin-right: 8px; }}
+.schedule-btn {{ padding: 6px 14px; border: 2px solid #0f3460; background: #16213e; color: #e0e0e0; cursor: pointer; border-radius: 4px; font-size: 12px; font-weight: 600; transition: all 0.2s; }}
+.schedule-btn:hover {{ border-color: #e94560; }}
+.schedule-btn.active {{ background: #0f3460; border-color: #e94560; color: #fff; }}
+.entry-select {{ display: flex; align-items: center; gap: 8px; }}
+.entry-select label {{ font-size: 13px; color: #888; }}
+.entry-select select {{ padding: 6px 12px; border: 1px solid #0f3460; background: #0d1b2a; color: #e0e0e0; border-radius: 4px; font-size: 13px; max-width: 420px; }}
+.breadcrumb {{ position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: 0; padding: 10px 24px; background: #0d1b2a; border-bottom: 1px solid #0f3460; flex-wrap: wrap; min-height: 40px; }}
+.bc-step {{ padding: 4px 10px; border-radius: 4px; font-size: 13px; color: #3498db; cursor: pointer; white-space: nowrap; }}
+.bc-step:hover {{ background: #16213e; }}
+.bc-current {{ color: #e94560; font-weight: 700; }}
+.bc-sep {{ color: #555; font-size: 13px; padding: 0 2px; }}
+.bc-label {{ color: #e94560; font-family: monospace; font-size: 12px; padding: 4px 8px; }}
+.flow-container {{ padding: 24px; max-width: 600px; margin: 0 auto; }}
+.flow-card {{ background: #16213e; border: 2px solid #0f3460; border-radius: 8px; overflow: hidden; }}
+.flow-card.entry-point {{ border-color: #2ecc71; }}
+.flow-card.handler {{ border-color: #3498db; }}
+.flow-card.primary {{ border-color: #ffd700; box-shadow: 0 0 12px rgba(255,215,0,0.15); }}
+.flow-card.dead-end {{ border-color: #e74c3c; }}
+.flow-card.expanded {{ border-color: #e94560; box-shadow: 0 0 10px rgba(233,69,96,0.2); }}
+.card-header {{ padding: 12px 16px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #0f3460; }}
+.card-name {{ font-weight: 700; font-size: 15px; color: #e0e0e0; }}
+.card-ext {{ color: #888; font-size: 13px; margin-left: 8px; }}
+.card-badges {{ display: flex; gap: 6px; align-items: center; }}
+.schedule-pill {{ padding: 2px 8px; border-radius: 10px; font-size: 11px; background: #0f3460; color: #1abc9c; }}
+.type-pill {{ padding: 2px 8px; border-radius: 10px; font-size: 11px; background: #0f3460; }}
+.type-pill.routingrule {{ color: #2ecc71; }}
+.type-pill.directory {{ color: #f39c12; }}
+.type-pill.interview {{ color: #9b59b6; }}
+.audio-row {{ display: flex; align-items: center; gap: 8px; padding: 8px 16px; background: #12192e; border-bottom: 1px solid #0a1628; }}
+.audio-badge {{ color: #1abc9c; font-size: 12px; text-decoration: none; }}
+.audio-badge:hover {{ text-decoration: underline; }}
+.cond-row {{ padding: 8px 16px; font-size: 12px; color: #888; background: #12192e; border-bottom: 1px solid #0a1628; }}
+.menu-row {{ display: flex; align-items: center; padding: 8px 16px; border-bottom: 1px solid #0a1628; cursor: default; transition: background 0.15s; }}
+.menu-row.clickable {{ cursor: pointer; }}
+.menu-row.clickable:hover {{ background: #0f3460; }}
+.menu-row.active-row {{ background: #1a1040; border-left: 3px solid #e94560; }}
+.menu-key {{ width: 64px; font-weight: 700; color: #e94560; font-family: monospace; font-size: 14px; flex-shrink: 0; }}
+.menu-arrow {{ color: #555; margin: 0 8px; }}
+.menu-target {{ flex: 1; color: #3498db; font-size: 13px; }}
+.menu-target.action {{ color: #e67e22; }}
+.menu-target.self-ref {{ color: #888; font-style: italic; }}
+.menu-row.after-greeting {{ border-left: 3px solid #9b59b6; background: #12192e; }}
+.menu-row.after-greeting .menu-key {{ color: #9b59b6; font-size: 12px; width: auto; font-weight: 600; font-family: inherit; }}
+.connector {{ width: 2px; height: 32px; background: #0f3460; margin: 0 auto; position: relative; }}
+.connector::after {{ content: ''; position: absolute; bottom: -4px; left: 50%; transform: translateX(-50%); border-left: 5px solid transparent; border-right: 5px solid transparent; border-top: 6px solid #0f3460; }}
+.connector-label {{ position: absolute; left: 16px; top: 6px; font-size: 11px; color: #e94560; font-weight: 600; white-space: nowrap; font-family: monospace; }}
+.empty-msg {{ text-align: center; color: #555; padding: 48px; font-size: 14px; }}
+@keyframes flash {{ 0%,100% {{ box-shadow: none; }} 50% {{ box-shadow: 0 0 20px rgba(233,69,96,0.5); }} }}
+.flash {{ animation: flash 0.6s ease 2; }}
+</style>
+</head>
+<body>
+<div class="topbar">
+<h1>{title_prefix}Call Flow Explorer</h1>
+<div class="topbar-links">
+<a href="callhandler_map.html">Graph View</a>
+<a href="callhandler_report.html">Table Report</a>
+</div>
+</div>
+<div class="controls">
+<div class="schedule-bar">
+<span class="schedule-label">Schedule:</span>
+<button class="schedule-btn active" data-schedule="standard" onclick="setSchedule('standard')">Standard</button>
+<button class="schedule-btn" data-schedule="offhours" onclick="setSchedule('offhours')">Off Hours</button>
+<button class="schedule-btn" data-schedule="holiday" onclick="setSchedule('holiday')">Holiday</button>
+<button class="schedule-btn" data-schedule="all" onclick="setSchedule('all')">All</button>
+</div>
+<div class="entry-select">
+<label>Start from:</label>
+<select id="entryPoint" onchange="renderFlow()"></select>
+</div>
+</div>
+<div class="breadcrumb" id="breadcrumb"></div>
+<div class="flow-container" id="flowContainer">
+<div class="empty-msg">Select an entry point above to trace a call flow.</div>
+</div>
+<script>
+const data = {report_data};
+let activeSchedule = "standard";
+let trailPath = []; // [{{nodeId, edgeLabel}}]
+
+const nodeMap = {{}};
+data.nodes.forEach(n => nodeMap[n.id] = n);
+
+function esc(s) {{
+    const d = document.createElement("div");
+    d.textContent = s || "";
+    return d.innerHTML;
+}}
+
+function edgeMatch(e) {{
+    if (activeSchedule === "all") return true;
+    return e.schedule === "always" || e.schedule === activeSchedule;
+}}
+
+function getEdges(sourceId) {{
+    return data.edges.filter(e => e.source === sourceId && edgeMatch(e));
+}}
+
+function isHandlerNode(n) {{
+    return n && (n.type === "callhandler" || n.type === "directory" || n.type === "interview");
+}}
+
+// Populate entry point dropdown
+function populateEntryPoints() {{
+    const sel = document.getElementById("entryPoint");
+    const prev = sel.value;
+    sel.innerHTML = "";
+    const rules = data.nodes.filter(n => n.type === "routingrule");
+    // Find primary root target to sort it first
+    const primaryNode = data.nodes.find(n => n.primary);
+    rules.sort((a, b) => {{
+        if (primaryNode) {{
+            const aEdge = data.edges.find(e => e.source === a.id);
+            const bEdge = data.edges.find(e => e.source === b.id);
+            const aHits = aEdge && aEdge.target === primaryNode.id ? 0 : 1;
+            const bHits = bEdge && bEdge.target === primaryNode.id ? 0 : 1;
+            if (aHits !== bHits) return aHits - bHits;
+        }}
+        return a.name.localeCompare(b.name);
+    }});
+    // Also add root call handlers that aren't targeted by rules
+    const ruleTargets = new Set(rules.flatMap(r => getEdges(r.id).map(e => e.target)));
+    const directRoots = data.nodes.filter(n => n.classification === "root" && isHandlerNode(n) && !ruleTargets.has(n.id));
+    rules.forEach(r => {{
+        const conds = (r.conditions || []).map(c => c.param + " " + c.op + " " + c.value).join(", ");
+        const label = r.name + (conds ? " [" + conds + "]" : "") + (r.ruleType ? " (" + r.ruleType + ")" : "");
+        const opt = document.createElement("option");
+        opt.value = r.id;
+        opt.textContent = label;
+        sel.appendChild(opt);
+    }});
+    directRoots.forEach(n => {{
+        const opt = document.createElement("option");
+        opt.value = n.id;
+        opt.textContent = n.name + (n.extension ? " (" + n.extension + ")" : "") + " [direct]";
+        sel.appendChild(opt);
+    }});
+    if (prev && sel.querySelector('option[value="' + prev + '"]')) sel.value = prev;
+}}
+
+function setSchedule(mode) {{
+    activeSchedule = mode;
+    document.querySelectorAll(".schedule-btn").forEach(btn => {{
+        btn.classList.toggle("active", btn.dataset.schedule === mode);
+    }});
+    populateEntryPoints();
+    renderFlow();
+}}
+
+function renderFlow() {{
+    const container = document.getElementById("flowContainer");
+    container.innerHTML = "";
+    trailPath = [];
+    const startId = document.getElementById("entryPoint").value;
+    if (!startId) {{ container.innerHTML = '<div class="empty-msg">No entry points found.</div>'; updateBreadcrumb(); return; }}
+    const startNode = nodeMap[startId];
+    if (!startNode) return;
+
+    // Render entry card
+    const entryCard = createCard(startNode, true);
+    container.appendChild(entryCard);
+    trailPath.push({{ nodeId: startId, label: "Entry" }});
+
+    // If routing rule, follow its target
+    if (startNode.type === "routingrule") {{
+        const targetEdge = getEdges(startId)[0];
+        if (targetEdge && nodeMap[targetEdge.target]) {{
+            container.appendChild(createConnector(targetEdge.label));
+            const targetCard = createCard(nodeMap[targetEdge.target]);
+            container.appendChild(targetCard);
+            trailPath.push({{ nodeId: targetEdge.target, label: targetEdge.label }});
+        }}
+    }}
+    updateBreadcrumb();
+}}
+
+function createCard(node, isEntry) {{
+    const card = document.createElement("div");
+    card.className = "flow-card" + (isEntry ? " entry-point" : " handler") + (node.primary ? " primary" : "");
+    card.id = "card-" + node.id;
+
+    // Header
+    const header = document.createElement("div");
+    header.className = "card-header";
+    const nameSpan = document.createElement("span");
+    nameSpan.innerHTML = '<span class="card-name">' + esc(node.name) + '</span>' +
+        (node.extension ? '<span class="card-ext">ext. ' + esc(node.extension) + '</span>' : '');
+    header.appendChild(nameSpan);
+    const badges = document.createElement("div");
+    badges.className = "card-badges";
+    if (node.type === "routingrule") {{
+        badges.innerHTML = '<span class="type-pill routingrule">' + esc(node.ruleType || "Rule") + '</span>';
+    }} else if (node.type === "directory") {{
+        badges.innerHTML = '<span class="type-pill directory">Directory</span>';
+    }} else if (node.type === "interview") {{
+        badges.innerHTML = '<span class="type-pill interview">Interview</span>';
+    }}
+    if (node.scheduleName) badges.innerHTML += '<span class="schedule-pill">' + esc(node.scheduleName) + '</span>';
+    header.appendChild(badges);
+    card.appendChild(header);
+
+    // Conditions (routing rules)
+    if (node.conditions && node.conditions.length) {{
+        const condDiv = document.createElement("div");
+        condDiv.className = "cond-row";
+        condDiv.innerHTML = node.conditions.map(c => esc(c.param) + " " + esc(c.op) + " <strong>" + esc(c.value) + "</strong>").join("<br>");
+        card.appendChild(condDiv);
+    }}
+
+    // Audio
+    if (node.audio && node.audio.length) {{
+        const audios = node.audio.filter(a => activeSchedule === "all" || a.schedule === "always" || a.schedule === activeSchedule);
+        audios.forEach(a => {{
+            const row = document.createElement("div");
+            row.className = "audio-row";
+            row.innerHTML = '&#9835; <a href="' + esc(a.url) + '" target="_blank" class="audio-badge">' + esc(a.greeting) + ' greeting</a>';
+            card.appendChild(row);
+        }});
+    }}
+
+    // Menu rows (edges from this node, skip if routing rule — handled above)
+    if (node.type !== "routingrule") {{
+        const edges = getEdges(node.id);
+        // Sort: Key entries first, then After:
+        edges.sort((a, b) => {{
+            const ak = a.label.startsWith("Key ") ? "0" + a.label : a.label.startsWith("After:") ? "2" + a.label : "1" + a.label;
+            const bk = b.label.startsWith("Key ") ? "0" + b.label : b.label.startsWith("After:") ? "2" + b.label : "1" + b.label;
+            return ak.localeCompare(bk);
+        }});
+        edges.forEach(edge => {{
+            const targetNode = nodeMap[edge.target];
+            const row = document.createElement("div");
+            const isAfter = edge.label.startsWith("After:") || edge.label.startsWith("Xfer:");
+            const isSelf = edge.target === node.id;
+            const isClickable = targetNode && isHandlerNode(targetNode) && !isSelf;
+            row.className = "menu-row" + (isAfter ? " after-greeting" : "") + (isClickable ? " clickable" : "");
+            row.dataset.target = edge.target;
+            row.dataset.label = edge.label;
+
+            const targetName = targetNode ? targetNode.name : "?";
+            const isAction = targetNode && targetNode.type === "action";
+
+            row.innerHTML =
+                '<span class="menu-key">' + esc(edge.label) + '</span>' +
+                '<span class="menu-arrow">&rarr;</span>' +
+                '<span class="menu-target' + (isAction ? " action" : "") + (isSelf ? " self-ref" : "") + '">' +
+                esc(targetName) + (isSelf ? " (loops back)" : "") +
+                (targetNode && targetNode.extension ? ' <span style="color:#888">(' + esc(targetNode.extension) + ')</span>' : '') +
+                '</span>';
+
+            if (isClickable) {{
+                row.addEventListener("click", () => expandTarget(edge, card));
+            }}
+            card.appendChild(row);
+        }});
+        if (edges.length === 0 && node.type !== "routingrule") {{
+            const row = document.createElement("div");
+            row.className = "menu-row";
+            row.innerHTML = '<span style="color:#555; font-size:12px;">No outgoing routes in this schedule</span>';
+            card.appendChild(row);
+        }}
+    }}
+    return card;
+}}
+
+function expandTarget(edge, parentCard) {{
+    const targetNode = nodeMap[edge.target];
+    if (!targetNode) return;
+
+    // Loop detection — scroll to existing card
+    if (trailPath.some(p => p.nodeId === edge.target)) {{
+        const existing = document.getElementById("card-" + edge.target);
+        if (existing) {{
+            existing.scrollIntoView({{ behavior: "smooth", block: "center" }});
+            existing.classList.remove("flash");
+            void existing.offsetWidth;
+            existing.classList.add("flash");
+        }}
+        return;
+    }}
+
+    // Remove any cards/connectors below the parent
+    let sibling = parentCard.nextElementSibling;
+    while (sibling) {{
+        const next = sibling.nextElementSibling;
+        sibling.remove();
+        sibling = next;
+    }}
+    // Trim trail to parent
+    const parentIdx = trailPath.findIndex(p => p.nodeId === parentCard.id.replace("card-", ""));
+    if (parentIdx >= 0) trailPath = trailPath.slice(0, parentIdx + 1);
+
+    // Clear active row highlights on parent
+    parentCard.querySelectorAll(".active-row").forEach(r => r.classList.remove("active-row"));
+    // Highlight clicked row
+    parentCard.querySelectorAll(".menu-row").forEach(r => {{
+        if (r.dataset.target === edge.target && r.dataset.label === edge.label) r.classList.add("active-row");
+    }});
+
+    // Add connector + new card
+    const container = document.getElementById("flowContainer");
+    container.appendChild(createConnector(edge.label));
+    const newCard = createCard(targetNode);
+    newCard.classList.add("expanded");
+    container.appendChild(newCard);
+    trailPath.push({{ nodeId: edge.target, label: edge.label }});
+    updateBreadcrumb();
+    newCard.scrollIntoView({{ behavior: "smooth", block: "center" }});
+}}
+
+function createConnector(label) {{
+    const conn = document.createElement("div");
+    conn.className = "connector";
+    if (label) conn.innerHTML = '<span class="connector-label">' + esc(label) + '</span>';
+    return conn;
+}}
+
+function updateBreadcrumb() {{
+    const bc = document.getElementById("breadcrumb");
+    bc.innerHTML = trailPath.map((step, i) => {{
+        const node = nodeMap[step.nodeId];
+        const name = node ? node.name : "?";
+        const isLast = i === trailPath.length - 1;
+        const labelHtml = i > 0 ? '<span class="bc-label">[' + esc(step.label) + ']</span><span class="bc-sep"> &gt; </span>' : '';
+        return (i > 0 ? '<span class="bc-sep"> &gt; </span>' : '') +
+            (i > 0 && step.label ? '<span class="bc-label">[' + esc(step.label) + ']</span><span class="bc-sep"> &gt; </span>' : '') +
+            '<span class="bc-step' + (isLast ? ' bc-current' : '') + '" onclick="scrollToCard(\\'' + step.nodeId + '\\')">' + esc(name) + '</span>';
+    }}).join("");
+}}
+
+function scrollToCard(nodeId) {{
+    const el = document.getElementById("card-" + nodeId);
+    if (el) {{
+        el.scrollIntoView({{ behavior: "smooth", block: "center" }});
+        el.classList.remove("flash");
+        void el.offsetWidth;
+        el.classList.add("flash");
+    }}
+}}
+
+// Init
+populateEntryPoints();
+renderFlow();
+</script>
+</body>
+</html>'''
+
+
+def generate_index_html(site_name=""):
+    title_prefix = f"{site_name} — " if site_name else ""
+    return f'''<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{title_prefix}Call Handler Reports</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='12' fill='%231a1a2e'/><path d='M16 20a4 4 0 014-4h8a4 4 0 014 4v24a4 4 0 01-4 4h-8a4 4 0 01-4-4z' fill='%23e94560'/><circle cx='24' cy='42' r='2' fill='%231a1a2e'/><path d='M36 28h10m0 0l-4-4m4 4l-4 4' stroke='%232ecc71' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/><path d='M36 38h10m0 0l-4-4m4 4l-4 4' stroke='%233498db' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/></svg>">
+<style>
+* {{ margin: 0; padding: 0; box-sizing: border-box; }}
+body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #1a1a2e; color: #e0e0e0; display: flex; justify-content: center; align-items: center; min-height: 100vh; }}
+.index {{ max-width: 480px; width: 100%; padding: 48px 32px; }}
+h1 {{ color: #e94560; font-size: 24px; margin-bottom: 8px; }}
+.subtitle {{ color: #888; font-size: 14px; margin-bottom: 32px; }}
+.card {{ display: block; background: #16213e; border: 2px solid #0f3460; border-radius: 8px; padding: 20px; margin-bottom: 12px; text-decoration: none; color: #e0e0e0; transition: all 0.2s; }}
+.card:hover {{ border-color: #e94560; background: #1a2540; }}
+.card h2 {{ font-size: 16px; color: #1abc9c; margin-bottom: 4px; }}
+.card p {{ font-size: 13px; color: #888; }}
+</style>
+</head>
+<body>
+<div class="index">
+<h1>{title_prefix}Call Handler Reports</h1>
+<p class="subtitle">Choose a view to explore the call handler routing data.</p>
+<a href="callflow.html" class="card">
+<h2>Call Flow Explorer</h2>
+<p>Trace calls step by step — select an entry point, click key presses to drill down through the IVR.</p>
+</a>
+<a href="callhandler_map.html" class="card">
+<h2>Graph View</h2>
+<p>Interactive D3.js force graph showing all handlers and their connections.</p>
+</a>
+<a href="callhandler_report.html" class="card">
+<h2>Table Report</h2>
+<p>Detailed table with call flow trees, schedules, holidays, and debug tools.</p>
+</a>
+</div>
+</body>
+</html>'''
+
+
 def ping_check(host):
     """Ping the host to verify network connectivity before attempting API calls."""
     hostname = urlparse(host).hostname or host
@@ -2028,20 +2444,29 @@ def cmd_generate(args):
 
         map_path = os.path.join(site_dir, "callhandler_map.html")
         report_path = os.path.join(site_dir, "callhandler_report.html")
+        flow_path = os.path.join(site_dir, "callflow.html")
+        index_path = os.path.join(site_dir, "index.html")
 
-        print(f"\nGenerating {map_path}...")
+        print(f"\nGenerating reports in {site_dir}/...")
         html = generate_html(nodes, edges, d3_local=d3_local, site_name=site_name)
         with open(map_path, "w", encoding="utf-8") as f:
             f.write(html)
 
-        print(f"Generating {report_path}...")
         table_html = generate_table_html(nodes, edges, holiday_schedules, schedules, site_name=site_name)
         with open(report_path, "w", encoding="utf-8") as f:
             f.write(table_html)
 
-        print(f"\nDone! Reports written to {site_dir}/")
+        flow_html = generate_callflow_html(nodes, edges, site_name=site_name)
+        with open(flow_path, "w", encoding="utf-8") as f:
+            f.write(flow_html)
 
-        webbrowser.open(f"file://{os.path.abspath(map_path)}")
+        idx_html = generate_index_html(site_name=site_name)
+        with open(index_path, "w", encoding="utf-8") as f:
+            f.write(idx_html)
+
+        print(f"Done! Reports written to {site_dir}/")
+
+        webbrowser.open(f"file://{os.path.abspath(index_path)}")
     finally:
         tee.close()
 
