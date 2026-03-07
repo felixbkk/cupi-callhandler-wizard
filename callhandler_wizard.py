@@ -112,11 +112,11 @@ def friendly_site_name(site_id):
 
 
 def lookup_city_flag(site_name):
-    """Look up a flag emoji for a site name from the bundled cities database.
+    """Look up a flag emoji and country for a site name from the bundled cities database.
 
     Tries exact match first, then sliding-window substrings (longest first)
     to catch multi-word cities like 'New York', 'Cape Town', 'Sao Paulo'.
-    Falls back to single-word matches, preferring longer words.
+    Returns (flag_emoji, country_name) or ("", "").
     """
     cities_paths = [
         os.path.join(os.path.dirname(os.path.abspath(__file__)), "resources", "cities.json"),
@@ -130,17 +130,17 @@ def lookup_city_flag(site_name):
                 key = site_name.lower().strip()
                 # Exact match
                 if key in cities:
-                    return cities[key]["flag"]
+                    return cities[key]["flag"], cities[key]["country"]
                 # Sliding window: try longest substrings first
                 words = key.split()
                 for window in range(len(words), 0, -1):
                     for start in range(len(words) - window + 1):
                         phrase = " ".join(words[start:start + window])
                         if phrase in cities:
-                            return cities[phrase]["flag"]
+                            return cities[phrase]["flag"], cities[phrase]["country"]
             except (json.JSONDecodeError, KeyError, OSError):
                 pass
-    return ""
+    return "", ""
 
 
 def sanitize_dirname(name):
@@ -4157,11 +4157,18 @@ document.getElementById("badge-sysdefault").innerHTML = badge(sysDefaultCount, "
 </html>'''
 
 
-def generate_index_html(site_name="", run_utc=None, host="", site_flag=""):
+def generate_index_html(site_name="", run_utc=None, host="", site_flag="", site_country=""):
     title_prefix = f"{site_name} — " if site_name else ""
-    flag_html = f'<span style="font-size:32px; vertical-align:middle; margin-right:12px;">{site_flag}</span> ' if site_flag else ""
+    if site_flag:
+        # Render flag emoji with a country-code text fallback for Windows
+        # JS detects if emoji rendered at correct width; if not, shows styled badge
+        flag_html = (f'<span id="site-flag" style="font-size:32px; vertical-align:middle; margin-right:12px;">'
+                     f'{site_flag}</span> ')
+        flag_fallback = f'<span id="flag-fallback" style="display:none; background:#0f3460; color:#1abc9c; padding:4px 10px; border-radius:6px; font-size:14px; font-weight:700; vertical-align:middle; margin-right:12px;">{site_country}</span> '
+        flag_html = flag_fallback + flag_html
+    else:
+        flag_html = ""
     if run_utc is None:
-
         run_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     admin_link = f'{host}/cuadmin/home.do' if host else ""
     return f'''<!DOCTYPE html>
@@ -4217,6 +4224,24 @@ h1 {{ color: #e94560; font-size: 24px; margin-bottom: 8px; }}
 </a>
 {'<a href="' + admin_link + '" target="_blank" class="card"><h2>Unity Admin &#8599;</h2><p>Log in to Cisco Unity Connection administration.</p></a>' if admin_link else ''}
 </div>
+<script>
+(function() {{
+    var flag = document.getElementById("site-flag");
+    var fallback = document.getElementById("flag-fallback");
+    if (!flag || !fallback) return;
+    // Measure rendered width of the flag emoji — on Windows it renders as
+    // two-letter text (~18-24px) instead of a single emoji glyph (~32px+)
+    var canvas = document.createElement("canvas").getContext("2d");
+    canvas.font = "32px serif";
+    var emojiWidth = canvas.measureText(flag.textContent.trim()).width;
+    var letterWidth = canvas.measureText("AB").width;
+    if (emojiWidth <= letterWidth * 1.2) {{
+        // Flag rendered as text letters, swap to country badge
+        flag.style.display = "none";
+        fallback.style.display = "inline-block";
+    }}
+}})();
+</script>
 </body>
 </html>'''
 
@@ -4401,28 +4426,34 @@ def cmd_generate(args):
         # Best-effort extension resolution: users and contacts
         users = []
         contacts = []
-        t0 = time.perf_counter()
-        try:
-            users = fetch_users(session, host)
-        except (requests.exceptions.HTTPError, requests.exceptions.ConnectionError) as e:
-            print(f"  Warning: Could not fetch users: {e}")
-        try:
-            contacts = fetch_contacts(session, host)
-        except (requests.exceptions.HTTPError, requests.exceptions.ConnectionError) as e:
-            print(f"  Warning: Could not fetch contacts: {e}")
-        ext_map = build_extension_map(users, contacts, call_handlers)
-        timings.append(("Fetch users + contacts", time.perf_counter() - t0, len(users) + len(contacts)))
-        if ext_map:
-            print(f"  Extension lookup: {len(ext_map)} extensions resolved")
+        ext_map = {}
+        if getattr(args, "resolve_extensions", False):
+            t0 = time.perf_counter()
+            try:
+                users = fetch_users(session, host)
+            except (requests.exceptions.HTTPError, requests.exceptions.ConnectionError) as e:
+                print(f"  Warning: Could not fetch users: {e}")
+            try:
+                contacts = fetch_contacts(session, host)
+            except (requests.exceptions.HTTPError, requests.exceptions.ConnectionError) as e:
+                print(f"  Warning: Could not fetch contacts: {e}")
+            ext_map = build_extension_map(users, contacts, call_handlers)
+            timings.append(("Fetch users + contacts", time.perf_counter() - t0, len(users) + len(contacts)))
+            if ext_map:
+                print(f"  Extension lookup: {len(ext_map)} extensions resolved")
+        else:
+            print("Skipping extension resolution (use --resolve-extensions to enable)")
 
-        print(f"\nFound {len(call_handlers)} call handlers, "
-              f"{len(interview_handlers)} interview handlers, "
-              f"{len(directory_handlers)} directory handlers, "
-              f"{len(routing_rules)} routing rules, "
-              f"{len(holiday_schedules)} holiday schedules, "
-              f"{len(schedules)} schedules, "
-              f"{len(schedule_sets)} schedule sets, "
-              f"{len(users)} users, {len(contacts)} contacts")
+        summary = (f"\nFound {len(call_handlers)} call handlers, "
+                   f"{len(interview_handlers)} interview handlers, "
+                   f"{len(directory_handlers)} directory handlers, "
+                   f"{len(routing_rules)} routing rules, "
+                   f"{len(holiday_schedules)} holiday schedules, "
+                   f"{len(schedules)} schedules, "
+                   f"{len(schedule_sets)} schedule sets")
+        if users or contacts:
+            summary += f", {len(users)} users, {len(contacts)} contacts"
+        print(summary)
 
         # --- Phase 2: Graph building (per-handler sub-resource fetches) ---
         print("\nBuilding graph (fetching menu entries, transfer rules, greetings, rule conditions)...")
@@ -4519,8 +4550,9 @@ def cmd_generate(args):
         with open(audit_html_path, "w", encoding="utf-8") as f:
             f.write(audit_html)
 
-        site_flag = lookup_city_flag(site_name)
-        idx_html = generate_index_html(site_name=site_name, run_utc=run_utc, host=host, site_flag=site_flag)
+        site_flag, site_country = lookup_city_flag(site_name)
+        idx_html = generate_index_html(site_name=site_name, run_utc=run_utc, host=host,
+                                       site_flag=site_flag, site_country=site_country)
         with open(index_path, "w", encoding="utf-8") as f:
             f.write(idx_html)
 
@@ -5088,6 +5120,8 @@ def main():
 
     # generate (default)
     sub_gen = subparsers.add_parser("generate", help="Generate HTML report and graph (default)")
+    sub_gen.add_argument("--resolve-extensions", action="store_true",
+                         help="Fetch users/contacts to resolve phone transfer extensions to names (slower)")
 
     # query — raw API path
     sub_query = subparsers.add_parser("query", help="Query a raw CUPI API path and dump JSON")
