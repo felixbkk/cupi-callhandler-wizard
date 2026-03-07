@@ -112,7 +112,12 @@ def friendly_site_name(site_id):
 
 
 def lookup_city_flag(site_name):
-    """Look up a flag emoji for a site name from the bundled cities database."""
+    """Look up a flag emoji for a site name from the bundled cities database.
+
+    Tries exact match first, then sliding-window substrings (longest first)
+    to catch multi-word cities like 'New York', 'Cape Town', 'Sao Paulo'.
+    Falls back to single-word matches, preferring longer words.
+    """
     cities_paths = [
         os.path.join(os.path.dirname(os.path.abspath(__file__)), "resources", "cities.json"),
         os.path.join("resources", "cities.json"),
@@ -122,13 +127,17 @@ def lookup_city_flag(site_name):
             try:
                 with open(p, "r", encoding="utf-8") as f:
                     cities = json.load(f)
-                # Try exact match, then each word in the site name
                 key = site_name.lower().strip()
+                # Exact match
                 if key in cities:
                     return cities[key]["flag"]
-                for word in key.split():
-                    if word in cities:
-                        return cities[word]["flag"]
+                # Sliding window: try longest substrings first
+                words = key.split()
+                for window in range(len(words), 0, -1):
+                    for start in range(len(words) - window + 1):
+                        phrase = " ".join(words[start:start + window])
+                        if phrase in cities:
+                            return cities[phrase]["flag"]
             except (json.JSONDecodeError, KeyError, OSError):
                 pass
     return ""
@@ -4140,7 +4149,7 @@ document.getElementById("badge-sysdefault").innerHTML = badge(sysDefaultCount, "
 
 def generate_index_html(site_name="", run_utc=None, host="", site_flag=""):
     title_prefix = f"{site_name} — " if site_name else ""
-    flag_html = f'<span style="font-size:32px; vertical-align:middle; margin-right:8px;">{site_flag}</span>' if site_flag else ""
+    flag_html = f'<span style="font-size:32px; vertical-align:middle; margin-right:12px;">{site_flag}</span> ' if site_flag else ""
     if run_utc is None:
         from datetime import timezone
         run_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
