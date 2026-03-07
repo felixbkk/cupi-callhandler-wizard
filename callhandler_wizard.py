@@ -666,11 +666,17 @@ def build_graph(call_handlers, interview_handlers, routing_rules, session, host,
             enabled = str(gr.get("PlayWhat", ""))  # 1 = system default, 2 = custom recording
             gr_schedule = GREETING_SCHEDULE.get(greeting_name, "always")
             if enabled == "2":
-                nodes[oid]["audio"].append({
-                    "greeting": greeting_name,
-                    "url": greeting_audio_url(host, oid, greeting_name, language_code),
-                    "schedule": gr_schedule,
-                })
+                audio_url = greeting_audio_url(host, oid, greeting_name, language_code)
+                try:
+                    resp = session.head(audio_url, timeout=10)
+                    if resp.status_code == 200:
+                        nodes[oid]["audio"].append({
+                            "greeting": greeting_name,
+                            "url": audio_url,
+                            "schedule": gr_schedule,
+                        })
+                except Exception:
+                    pass
             action = str(gr.get("AfterGreetingAction", "0"))
             target = gr.get("AfterGreetingTargetHandlerObjectId", "")
             if action == ACTION_GOTO and target:
