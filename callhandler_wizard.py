@@ -801,8 +801,8 @@ def copy_d3(site_dir):
         return False
 
 
-def generate_html(nodes, edges, d3_local=False, site_name=""):
-    graph_data = json.dumps({"nodes": nodes, "links": edges})
+def generate_html(nodes, edges, d3_local=False, site_name="", host=""):
+    graph_data = json.dumps({"nodes": nodes, "links": edges, "host": host, "siteName": site_name})
     d3_tag = f'<script src="{D3_FILENAME}"></script>' if d3_local else f'<script src="{D3_CDN_URL}"></script>'
     title_prefix = f"{site_name} — " if site_name else ""
     return f'''<!DOCTYPE html>
@@ -894,6 +894,18 @@ marker {{ fill: #666; }}
 </div>
 <script>
 const graphData = {graph_data};
+
+function adminUrl(node) {{
+    if (!graphData.host || !node || !node.id) return "";
+    const paths = {{
+        callhandler: "/cuadmin/#/callmgmt/callhandlers/",
+        interview: "/cuadmin/#/callmgmt/interviewhandlers/",
+        directory: "/cuadmin/#/callmgmt/directoryhandlers/",
+        routingrule: "/cuadmin/#/callrouting/directroutingrules/",
+    }};
+    const p = paths[node.type];
+    return p ? graphData.host + p + node.id : "";
+}}
 
 const colorMap = {{
     root: "#2ecc71",
@@ -1242,7 +1254,9 @@ function showDetails(d) {{
         return tid === d.id;
     }});
 
+    const aUrl = adminUrl(d);
     let html = '<h3>Node Details</h3>' +
+        (aUrl ? '<div style="margin-bottom:8px;"><a href="' + esc(aUrl) + '" target="_blank" style="color:#1abc9c; font-size:12px; text-decoration:none;">View on ' + esc(graphData.siteName || 'Unity') + ' Unity &rarr;</a></div>' : '') +
         '<div class="detail-row"><span class="detail-label">Display Name</span><span class="detail-value">' + esc(d.name) + '</span></div>' +
         '<div class="detail-row"><span class="detail-label">Extension</span><span class="detail-value">' + esc(d.extension || "N/A") + '</span></div>' +
         '<div class="detail-row"><span class="detail-label">Type</span><span class="detail-value">' + esc(d.type) + '</span></div>' +
@@ -1403,11 +1417,13 @@ def _active_days(detail):
     return ", ".join(days)
 
 
-def generate_table_html(nodes, edges, holiday_schedules, schedules, site_name=""):
+def generate_table_html(nodes, edges, holiday_schedules, schedules, site_name="", host=""):
     title_prefix = f"{site_name} — " if site_name else ""
     report_data = json.dumps({
         "nodes": nodes,
         "edges": edges,
+        "host": host,
+        "siteName": site_name,
         "holidays": [{
             "name": s.get("DisplayName", ""),
             "entries": [{
@@ -1579,6 +1595,18 @@ function esc(s) {{
     return d.innerHTML;
 }}
 
+function adminUrl(node) {{
+    if (!data.host || !node || !node.id) return "";
+    const paths = {{
+        callhandler: "/cuadmin/#/callmgmt/callhandlers/",
+        interview: "/cuadmin/#/callmgmt/interviewhandlers/",
+        directory: "/cuadmin/#/callmgmt/directoryhandlers/",
+        routingrule: "/cuadmin/#/callrouting/directroutingrules/",
+    }};
+    const p = paths[node.type];
+    return p ? data.host + p + node.id : "";
+}}
+
 function edgeMatchesSchedule(e) {{
     if (activeSchedule === "all") return true;
     return e.schedule === "always" || e.schedule === activeSchedule;
@@ -1660,9 +1688,11 @@ function renderTable() {{
             schedCondHtml = esc(n.scheduleName);
         }}
 
+        const aUrl = adminUrl(n);
+        const unityLink = aUrl ? ' <a href="' + esc(aUrl) + '" target="_blank" title="View on ' + esc(data.siteName || 'Unity') + ' Unity" style="color:#1abc9c; text-decoration:none; font-size:11px;">&#9741;</a>' : '';
         const tr = document.createElement("tr");
         tr.innerHTML =
-            '<td style="color:' + color + '; font-weight:600">' + esc(n.name) + (n.system ? ' <span class="muted">(system)</span>' : "") + (n.postGreeting ? ' <span style="color:#e67e22">&#9654; post-greeting</span>' : "") + '</td>' +
+            '<td style="color:' + color + '; font-weight:600">' + esc(n.name) + unityLink + (n.system ? ' <span class="muted">(system)</span>' : "") + (n.postGreeting ? ' <span style="color:#e67e22">&#9654; post-greeting</span>' : "") + '</td>' +
             '<td>' + esc(n.extension) + '</td>' +
             '<td>' + esc(n.type) + '</td>' +
             '<td style="color:' + color + '">' + esc(clsLabel) + '</td>' +
@@ -2010,9 +2040,9 @@ function copyDebugOutput() {{
 </html>'''
 
 
-def generate_callflow_html(nodes, edges, site_name=""):
+def generate_callflow_html(nodes, edges, site_name="", host=""):
     title_prefix = f"{site_name} — " if site_name else ""
-    report_data = json.dumps({"nodes": nodes, "edges": edges})
+    report_data = json.dumps({"nodes": nodes, "edges": edges, "host": host, "siteName": site_name})
     return f'''<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -2116,6 +2146,18 @@ let trailPath = []; // [{{nodeId, edgeLabel}}]
 
 const nodeMap = {{}};
 data.nodes.forEach(n => nodeMap[n.id] = n);
+
+function adminUrl(node) {{
+    if (!data.host || !node || !node.id) return "";
+    const paths = {{
+        callhandler: "/cuadmin/#/callmgmt/callhandlers/",
+        interview: "/cuadmin/#/callmgmt/interviewhandlers/",
+        directory: "/cuadmin/#/callmgmt/directoryhandlers/",
+        routingrule: "/cuadmin/#/callrouting/directroutingrules/",
+    }};
+    const p = paths[node.type];
+    return p ? data.host + p + node.id : "";
+}}
 
 function esc(s) {{
     const d = document.createElement("div");
@@ -2232,6 +2274,8 @@ function createCard(node, isEntry) {{
         badges.innerHTML = '<span class="type-pill interview">Interview</span>';
     }}
     if (node.scheduleName) badges.innerHTML += '<span class="schedule-pill">' + esc(node.scheduleName) + '</span>';
+    const aUrl = adminUrl(node);
+    if (aUrl) badges.innerHTML += '<a href="' + esc(aUrl) + '" target="_blank" style="color:#1abc9c; font-size:11px; text-decoration:none; margin-left:4px;" title="View on ' + esc(data.siteName || 'Unity') + ' Unity">&#9741;</a>';
     header.appendChild(badges);
     card.appendChild(header);
 
@@ -2655,15 +2699,15 @@ def cmd_generate(args):
         index_path = os.path.join(site_dir, "index.html")
 
         print(f"\nGenerating reports in {site_dir}/...")
-        html = generate_html(nodes, edges, d3_local=d3_local, site_name=site_name)
+        html = generate_html(nodes, edges, d3_local=d3_local, site_name=site_name, host=host)
         with open(map_path, "w", encoding="utf-8") as f:
             f.write(html)
 
-        table_html = generate_table_html(nodes, edges, holiday_schedules, schedules, site_name=site_name)
+        table_html = generate_table_html(nodes, edges, holiday_schedules, schedules, site_name=site_name, host=host)
         with open(report_path, "w", encoding="utf-8") as f:
             f.write(table_html)
 
-        flow_html = generate_callflow_html(nodes, edges, site_name=site_name)
+        flow_html = generate_callflow_html(nodes, edges, site_name=site_name, host=host)
         with open(flow_path, "w", encoding="utf-8") as f:
             f.write(flow_html)
 
