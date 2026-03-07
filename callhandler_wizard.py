@@ -720,7 +720,7 @@ def _conv_suffix(conversation):
 
 def _add_route_edge(nodes, edges, source_id, action, target_id, conversation,
                     label, schedule="always", dir_handler_map=None, display_name="",
-                    alt_contact_ext="", extension_map=None):
+                    alt_contact_ext="", alt_contact_desc="", extension_map=None):
     """Process a routing action: create target node if needed and add edge."""
     if action == ACTION_GOTO and target_id:
         _ensure_handler_node(nodes, target_id, conversation, dir_handler_map, display_name)
@@ -736,10 +736,11 @@ def _add_route_edge(nodes, edges, source_id, action, target_id, conversation,
             "label": label, "schedule": schedule,
         })
     elif action == ACTION_XFER_ALT and alt_contact_ext:
-        # Resolve to the actual phone number from the handler's Alternate transfer rule
+        # Resolve to the actual phone number from the menu entry's TransferNumber
         ext_map = extension_map or {}
-        resolved_name = ext_map.get(alt_contact_ext, "")
-        display = f"{resolved_name} (x{alt_contact_ext})" if resolved_name else f"Ext {alt_contact_ext}"
+        # Prefer CUPI DisplayName (description) over extension-resolved name
+        desc = alt_contact_desc or ext_map.get(alt_contact_ext, "")
+        display = f"{desc} ({alt_contact_ext})" if desc else f"Ext {alt_contact_ext}"
         phone_id = f"phone_{alt_contact_ext}"
         if phone_id not in nodes:
             nodes[phone_id] = {
@@ -973,13 +974,15 @@ def build_graph(call_handlers, interview_handlers, routing_rules, session, host,
             # Take Message on a menu key is a misconfiguration for AA
             if action == ACTION_TAKE_MSG:
                 nodes[oid]["warnings"].append(f"Key {key} action is Take Message")
-            # Action=7 has TransferNumber on the menu entry itself
+            # Action=7 has TransferNumber and DisplayName on the menu entry itself
             entry_xfer_num = entry.get("TransferNumber", "")
+            entry_xfer_desc = entry.get("DisplayName", "") if action == ACTION_XFER_ALT else ""
             _add_route_edge(nodes, edges, oid, action,
                 target_id,
                 entry.get("TargetConversation", ""),
                 f"Key {key}", dir_handler_map=dir_handler_map,
-                alt_contact_ext=entry_xfer_num, extension_map=ext_map)
+                alt_contact_ext=entry_xfer_num, alt_contact_desc=entry_xfer_desc,
+                extension_map=ext_map)
         # Check for missing timeout handler (no * key configured)
         active_keys = [e for e in menu_entries if str(e.get("Action", "0")) != ACTION_IGNORE]
         if active_keys and not has_timeout_key:
@@ -1086,7 +1089,7 @@ def build_graph(call_handlers, interview_handlers, routing_rules, session, host,
                 gr.get("AfterGreetingTargetConversation", ""),
                 f"After:{greeting_name}", schedule=gr_schedule,
                 dir_handler_map=dir_handler_map,
-                alt_contact_ext=alt_contact_ext, extension_map=ext_map)
+                extension_map=ext_map)
 
         # Warn if caller input is disabled but handler has active menu keys
         if has_ignore_digits and active_keys:
@@ -4867,7 +4870,12 @@ def cmd_handler(args):
             action = me.get("Action", "?")
             target = me.get("TargetHandlerObjectId", "")
             xfer_num = me.get("TransferNumber", "")
-            extra = f" TransferNumber={xfer_num}" if xfer_num else ""
+            xfer_desc = me.get("DisplayName", "")
+            extra = ""
+            if xfer_num:
+                extra += f" TransferNumber={xfer_num}"
+            if xfer_desc and str(action) == "7":
+                extra += f" Desc={xfer_desc}"
             print(f"  Key {key}: Action={action} Target={target or 'N/A'}{extra}")
             if str(action) == "7":
                 for k, v in sorted(me.items()):
