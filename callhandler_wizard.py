@@ -3620,8 +3620,9 @@ const DAY_LABELS = {{ Mon: "Monday", Tue: "Tuesday", Wed: "Wednesday", Thu: "Thu
         const roots = data.nodes.filter(n => n.type === "routingrule" && (adj[n.id] || []).length > 0);
 
         roots.forEach(root => {{
-            // Find the extension from the rule name (pattern: "5501-Name-Ext-10000" -> "5501")
-            const ruleExt = (root.name.match(/^(\\d+)/) || ["", ""])[1];
+            // Get the called number from routing rule conditions
+            const calledCond = (root.conditions || []).find(c => c.param === "Called Number");
+            const ruleExt = calledCond ? calledCond.value : "";
             const entries = adj[root.id] || [];
             entries.forEach(ruleEdge => {{
                 const entryNode = nodeMap[ruleEdge.target];
