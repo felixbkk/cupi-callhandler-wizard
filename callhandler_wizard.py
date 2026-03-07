@@ -1695,7 +1695,7 @@ function showDetails(d) {{
         d.audio.forEach(a => {{
             const disTag = a.enabled === false ? ' <span style="color:#e74c3c; font-size:10px;">(disabled)</span>' : '';
             html += '<div class="detail-row" style="padding:4px 0;"><span style="color:#1abc9c; font-size:12px;">&#9835; ' + esc(a.greeting) + disTag + '</span><br>' +
-                '<audio controls preload="none" style="width:100%; max-width:320px; height:32px; margin-top:2px; color-scheme:dark;"><source src="' + esc(a.url) + '" type="audio/wav"></audio></div>';
+                '<audio controls preload="none" style="width:100%; max-width:200px; height:32px; margin-top:2px; color-scheme:dark;"><source src="' + esc(a.url) + '" type="audio/wav"></audio></div>';
         }});
     }}
 
@@ -2078,7 +2078,7 @@ function renderTable() {{
         const audioHtml = audioList.length
             ? audioList.map(a => '<span class="audio-link">' + esc(a.greeting) + '</span>' + schedTag(a.schedule) +
                 (a.enabled === false ? ' <span style="color:#e74c3c; font-size:10px;">(disabled)</span>' : '') +
-                '<br><audio controls preload="none" style="width:240px; height:32px; color-scheme:dark;"><source src="' + esc(a.url) + '" type="audio/wav"></audio>').join("<br>")
+                '<br><audio controls preload="none" style="width:200px; height:32px; color-scheme:dark;"><source src="' + esc(a.url) + '" type="audio/wav"></audio>').join("<br>")
             : '<span class="muted">&mdash;</span>';
 
         // Schedule name for handlers, conditions for routing rules
@@ -2170,7 +2170,7 @@ function renderCallFlowTrees(activeEdges) {{
             const prefix = "  ".repeat(indent);
             return node.audio.map(a => prefix + '<span class="audio-link">&#9835; ' + esc(a.greeting) + ' greeting</span>' + schedTag(a.schedule) +
                 (a.enabled === false ? ' <span style="color:#e74c3c; font-size:10px;">(disabled)</span>' : '') +
-                '<br>' + prefix + '<audio controls preload="none" style="width:240px; height:32px; color-scheme:dark;"><source src="' + esc(a.url) + '" type="audio/wav"></audio>');
+                '<br>' + prefix + '<audio controls preload="none" style="width:200px; height:32px; color-scheme:dark;"><source src="' + esc(a.url) + '" type="audio/wav"></audio>');
         }}
 
         let lines = [];
@@ -2682,7 +2682,7 @@ function createCard(node, isEntry) {{
                 (gUrl ? ' <a href="' + esc(gUrl) + '" target="_blank" style="color:#888; font-size:10px; text-decoration:none;" title="Edit in Unity">&#9881;</a>' : '') +
                 schedTag(a.schedule) +
                 (a.enabled === false ? ' <span style="color:#e74c3c; font-size:10px;">(disabled)</span>' : '') +
-                '<br><audio controls preload="none" style="width:100%; max-width:320px; height:32px; margin-top:2px; color-scheme:dark;"><source src="' + esc(a.url) + '" type="audio/wav"></audio>';
+                '<br><audio controls preload="none" style="width:100%; max-width:200px; height:32px; margin-top:2px; color-scheme:dark;"><source src="' + esc(a.url) + '" type="audio/wav"></audio>';
             card.appendChild(row);
         }});
     }}
