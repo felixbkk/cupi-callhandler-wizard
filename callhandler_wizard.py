@@ -854,7 +854,8 @@ marker {{ fill: #666; }}
 <h2>{title_prefix}Call Handler Map</h2>
 <a href="index.html" style="color:#1abc9c; font-size:13px;">Home</a> &nbsp;
 <a href="callflow.html" style="color:#1abc9c; font-size:13px;">Call Flow</a> &nbsp;
-<a href="callhandler_report.html" style="color:#1abc9c; font-size:13px;">Table Report</a>
+<a href="callhandler_report.html" style="color:#1abc9c; font-size:13px;">Handlers &amp; Routing</a> &nbsp;
+<a href="schedules.html" style="color:#1abc9c; font-size:13px;">Schedules</a>
 <div class="controls">
 <h3>Layout</h3>
 <div style="display:flex; gap:6px; flex-wrap:wrap;">
@@ -1424,24 +1425,6 @@ def generate_table_html(nodes, edges, holiday_schedules, schedules, site_name=""
         "edges": edges,
         "host": host,
         "siteName": site_name,
-        "holidays": [{
-            "name": s.get("DisplayName", ""),
-            "entries": [{
-                "name": h.get("DisplayName", ""),
-                "start": h.get("StartDate", "").split(" ")[0],
-                "end": h.get("EndDate", "").split(" ")[0],
-            } for h in s.get("_holidays", [])]
-        } for s in holiday_schedules],
-        "schedules": [{
-            "name": s.get("DisplayName", ""),
-            "id": s.get("ObjectId", ""),
-            "details": [{
-                "days": _active_days(d),
-                "startTime": _format_minutes(d.get("StartTime", "")),
-                "endTime": _format_minutes(d.get("EndTime", "")),
-                "active": str(d.get("IsActive", "true")).lower() == "true",
-            } for d in s.get("_details", [])]
-        } for s in schedules],
     })
 
     return f'''<!DOCTYPE html>
@@ -1504,10 +1487,11 @@ tr:hover {{ background: #16213e; }}
 </style>
 </head>
 <body>
-<h1>{title_prefix}Call Handler Report</h1>
+<h1>{title_prefix}Handlers &amp; Routing</h1>
 <a href="index.html" style="color:#1abc9c; font-size:13px;">Home</a> &nbsp;
 <a href="callflow.html" style="color:#1abc9c; font-size:13px;">Call Flow</a> &nbsp;
-<a href="callhandler_map.html" style="color:#1abc9c; font-size:13px;">Graph View</a>
+<a href="callhandler_map.html" style="color:#1abc9c; font-size:13px;">Graph View</a> &nbsp;
+<a href="schedules.html" style="color:#1abc9c; font-size:13px;">Schedules</a>
 <div id="stats" class="stats"></div>
 <div id="summary" class="summary"></div>
 
@@ -1516,8 +1500,6 @@ tr:hover {{ background: #16213e; }}
 <a href="#schedule-view">Schedule View</a>
 <a href="#flow-trees">Call Flow Trees</a>
 <a href="#handlers">Handlers &amp; Routing</a>
-<a href="#schedules">Schedules</a>
-<a href="#holidays">Holiday Schedules</a>
 </nav>
 
 <h2 id="schedule-view">Call Flow Schedule View</h2>
@@ -1547,22 +1529,6 @@ tr:hover {{ background: #16213e; }}
 <table id="handlerTable">
 <thead>
 <tr><th>Name</th><th>Extension</th><th>Type</th><th>Classification</th><th>Schedule / Conditions</th><th>Incoming</th><th>Outgoing</th><th>Audio</th><th>Object ID</th></tr>
-</thead>
-<tbody></tbody>
-</table>
-
-<div class="section-header"><h2 id="schedules">Schedules (Business Hours)</h2><button class="copy-btn" onclick="copyTableAsMd('scheduleTable', this)">Copy as Markdown</button></div>
-<table id="scheduleTable">
-<thead>
-<tr><th>Schedule</th><th>Days</th><th>Start Time</th><th>End Time</th><th>Active</th></tr>
-</thead>
-<tbody></tbody>
-</table>
-
-<div class="section-header"><h2 id="holidays">Holiday Schedules</h2><button class="copy-btn" onclick="copyTableAsMd('holidayTable', this)">Copy as Markdown</button></div>
-<table id="holidayTable">
-<thead>
-<tr><th>Schedule</th><th>Holiday</th><th>Date</th></tr>
 </thead>
 <tbody></tbody>
 </table>
@@ -1709,7 +1675,7 @@ function renderTable() {{
     data.nodes.forEach(n => counts[n.classification] = (counts[n.classification] || 0) + 1);
     document.getElementById("stats").innerHTML =
         data.nodes.length + " nodes &middot; " + activeEdges.length + " active connections &middot; " +
-        data.edges.length + " total connections &middot; " + data.holidays.length + " holiday schedules";
+        data.edges.length + " total connections";
     document.getElementById("summary").innerHTML =
         ["root","normal","deadend","unreachable","orphan"]
             .filter(c => counts[c])
@@ -1801,46 +1767,6 @@ function renderCallFlowTrees(activeEdges) {{
 
     container.innerHTML = html;
 }}
-
-// Render schedules table (static)
-(function() {{
-    const tbody = document.querySelector("#scheduleTable tbody");
-    if (!data.schedules.length) {{
-        tbody.innerHTML = '<tr><td colspan="5" class="muted">No schedules found</td></tr>';
-        return;
-    }}
-    data.schedules.forEach(s => {{
-        if (!s.details.length) {{
-            const tr = document.createElement("tr");
-            tr.innerHTML = '<td>' + esc(s.name) + '</td><td>All days</td><td>12:00 AM</td><td>11:59 PM</td><td>Yes</td>';
-            tbody.appendChild(tr);
-            return;
-        }}
-        s.details.forEach(d => {{
-            const tr = document.createElement("tr");
-            tr.innerHTML = '<td>' + esc(s.name) + '</td><td>' + esc(d.days) + '</td><td>' + esc(d.startTime) + '</td><td>' + esc(d.endTime) + '</td><td>' + (d.active ? "Yes" : '<span class="muted">No</span>') + '</td>';
-            tbody.appendChild(tr);
-        }});
-    }});
-}})();
-
-// Render holiday table (static)
-(function() {{
-    const tbody = document.querySelector("#holidayTable tbody");
-    if (!data.holidays.length) {{
-        tbody.innerHTML = '<tr><td colspan="3" class="muted">No holiday schedules found</td></tr>';
-        return;
-    }}
-    data.holidays.forEach(s => {{
-        if (!s.entries.length) return;
-        s.entries.forEach(h => {{
-            const tr = document.createElement("tr");
-            const dateStr = h.start === h.end ? esc(h.start) : esc(h.start) + ' &ndash; ' + esc(h.end);
-            tr.innerHTML = '<td>' + esc(s.name) + '</td><td>' + esc(h.name) + '</td><td>' + dateStr + '</td>';
-            tbody.appendChild(tr);
-        }});
-    }});
-}})();
 
 // Initial render
 renderTable();
@@ -2119,7 +2045,8 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans
 <h1>{title_prefix}Call Flow Explorer</h1>
 <div class="topbar-links">
 <a href="callhandler_map.html">Graph View</a>
-<a href="callhandler_report.html">Table Report</a>
+<a href="callhandler_report.html">Handlers &amp; Routing</a>
+<a href="schedules.html">Schedules</a>
 </div>
 </div>
 <div class="controls">
@@ -2501,6 +2428,151 @@ if (!loadFromHash()) {{
 </html>'''
 
 
+def generate_schedules_html(holiday_schedules, schedules, site_name="", host=""):
+    title_prefix = f"{site_name} — " if site_name else ""
+    report_data = json.dumps({
+        "host": host,
+        "siteName": site_name,
+        "holidays": [{
+            "name": s.get("DisplayName", ""),
+            "entries": [{
+                "name": h.get("DisplayName", ""),
+                "start": h.get("StartDate", "").split(" ")[0],
+                "end": h.get("EndDate", "").split(" ")[0],
+            } for h in s.get("_holidays", [])]
+        } for s in holiday_schedules],
+        "schedules": [{
+            "name": s.get("DisplayName", ""),
+            "id": s.get("ObjectId", ""),
+            "details": [{
+                "days": _active_days(d),
+                "startTime": _format_minutes(d.get("StartTime", "")),
+                "endTime": _format_minutes(d.get("EndTime", "")),
+                "active": str(d.get("IsActive", "true")).lower() == "true",
+            } for d in s.get("_details", [])]
+        } for s in schedules],
+    })
+
+    return f'''<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{title_prefix}Schedules</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='12' fill='%231a1a2e'/><path d='M16 20a4 4 0 014-4h8a4 4 0 014 4v24a4 4 0 01-4 4h-8a4 4 0 01-4-4z' fill='%23e94560'/><circle cx='24' cy='42' r='2' fill='%231a1a2e'/><path d='M36 28h10m0 0l-4-4m4 4l-4 4' stroke='%232ecc71' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/><path d='M36 38h10m0 0l-4-4m4 4l-4 4' stroke='%233498db' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/></svg>">
+<style>
+* {{ margin: 0; padding: 0; box-sizing: border-box; }}
+body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #1a1a2e; color: #e0e0e0; padding: 24px; }}
+h1 {{ color: #e94560; margin-bottom: 8px; }}
+h2 {{ color: #e94560; margin: 32px 0 12px 0; font-size: 20px; border-bottom: 1px solid #0f3460; padding-bottom: 8px; }}
+table {{ width: 100%; border-collapse: collapse; margin-bottom: 24px; font-size: 13px; }}
+th {{ background: #16213e; color: #e94560; text-align: left; padding: 10px 12px; position: sticky; top: 0; border-bottom: 2px solid #0f3460; }}
+td {{ padding: 8px 12px; border-bottom: 1px solid #0f3460; vertical-align: top; }}
+tr:hover {{ background: #16213e; }}
+.muted {{ color: #555; }}
+.section-header {{ display: flex; align-items: center; gap: 12px; }}
+.section-header h2 {{ margin: 0; }}
+.copy-btn {{ padding: 4px 10px; border: 1px solid #0f3460; background: #16213e; color: #888; cursor: pointer; border-radius: 3px; font-size: 11px; transition: all 0.2s; }}
+.copy-btn:hover {{ color: #e0e0e0; border-color: #e94560; }}
+.back-to-top {{ position: fixed; bottom: 16px; left: 16px; padding: 8px 14px; background: #0f3460; border: 1px solid #0f3460; color: #e0e0e0; cursor: pointer; border-radius: 4px; font-size: 12px; z-index: 100; text-decoration: none; }}
+.back-to-top:hover {{ background: #1a1a4e; border-color: #e94560; }}
+</style>
+</head>
+<body>
+<h1>{title_prefix}Schedules</h1>
+<a href="index.html" style="color:#1abc9c; font-size:13px;">Home</a> &nbsp;
+<a href="callflow.html" style="color:#1abc9c; font-size:13px;">Call Flow</a> &nbsp;
+<a href="callhandler_map.html" style="color:#1abc9c; font-size:13px;">Graph View</a> &nbsp;
+<a href="callhandler_report.html" style="color:#1abc9c; font-size:13px;">Handlers &amp; Routing</a>
+
+<div class="section-header"><h2 id="schedules">Business Hours</h2><button class="copy-btn" onclick="copyTableAsMd('scheduleTable', this)">Copy as Markdown</button></div>
+<table id="scheduleTable">
+<thead>
+<tr><th>Schedule</th><th>Days</th><th>Start Time</th><th>End Time</th><th>Active</th></tr>
+</thead>
+<tbody></tbody>
+</table>
+
+<div class="section-header"><h2 id="holidays">Holiday Schedules</h2><button class="copy-btn" onclick="copyTableAsMd('holidayTable', this)">Copy as Markdown</button></div>
+<table id="holidayTable">
+<thead>
+<tr><th>Schedule</th><th>Holiday</th><th>Date</th></tr>
+</thead>
+<tbody></tbody>
+</table>
+
+<script>
+const data = {report_data};
+
+function esc(s) {{
+    const d = document.createElement("div");
+    d.textContent = s || "";
+    return d.innerHTML;
+}}
+
+// Render schedules
+(function() {{
+    const tbody = document.querySelector("#scheduleTable tbody");
+    if (!data.schedules.length) {{
+        tbody.innerHTML = '<tr><td colspan="5" class="muted">No schedules found</td></tr>';
+        return;
+    }}
+    data.schedules.forEach(s => {{
+        if (!s.details.length) {{
+            const tr = document.createElement("tr");
+            tr.innerHTML = '<td>' + esc(s.name) + '</td><td>All days</td><td>12:00 AM</td><td>11:59 PM</td><td>Yes</td>';
+            tbody.appendChild(tr);
+            return;
+        }}
+        s.details.forEach(d => {{
+            const tr = document.createElement("tr");
+            tr.innerHTML = '<td>' + esc(s.name) + '</td><td>' + esc(d.days) + '</td><td>' + esc(d.startTime) + '</td><td>' + esc(d.endTime) + '</td><td>' + (d.active ? "Yes" : '<span class="muted">No</span>') + '</td>';
+            tbody.appendChild(tr);
+        }});
+    }});
+}})();
+
+// Render holidays
+(function() {{
+    const tbody = document.querySelector("#holidayTable tbody");
+    if (!data.holidays.length) {{
+        tbody.innerHTML = '<tr><td colspan="3" class="muted">No holiday schedules found</td></tr>';
+        return;
+    }}
+    data.holidays.forEach(s => {{
+        if (!s.entries.length) return;
+        s.entries.forEach(h => {{
+            const tr = document.createElement("tr");
+            const dateStr = h.start === h.end ? esc(h.start) : esc(h.start) + ' &ndash; ' + esc(h.end);
+            tr.innerHTML = '<td>' + esc(s.name) + '</td><td>' + esc(h.name) + '</td><td>' + dateStr + '</td>';
+            tbody.appendChild(tr);
+        }});
+    }});
+}})();
+
+function flashBtn(btn, msg) {{
+    const orig = btn.textContent;
+    btn.textContent = msg || "Copied!";
+    setTimeout(() => btn.textContent = orig, 1500);
+}}
+
+function copyTableAsMd(tableId, btn) {{
+    const table = document.getElementById(tableId);
+    const headerCells = Array.from(table.querySelectorAll("thead th"));
+    const headers = headerCells.map(th => th.textContent);
+    const lines = [headers.join(" | "), headers.map(() => "---").join(" | ")];
+    table.querySelectorAll("tbody tr").forEach(tr => {{
+        const cells = Array.from(tr.querySelectorAll("td")).map(td => td.textContent.trim());
+        lines.push(cells.join(" | "));
+    }});
+    navigator.clipboard.writeText(lines.join("\\n")).then(() => flashBtn(btn));
+}}
+</script>
+<a href="#" class="back-to-top">&uarr; Top</a>
+</body>
+</html>'''
+
+
 def generate_index_html(site_name=""):
     title_prefix = f"{site_name} — " if site_name else ""
     return f'''<!DOCTYPE html>
@@ -2535,8 +2607,12 @@ h1 {{ color: #e94560; font-size: 24px; margin-bottom: 8px; }}
 <p>Interactive D3.js force graph showing all handlers and their connections.</p>
 </a>
 <a href="callhandler_report.html" class="card">
-<h2>Table Report</h2>
-<p>Detailed table with call flow trees, schedules, holidays, and debug tools.</p>
+<h2>Handlers &amp; Routing</h2>
+<p>Call flow trees, handler table with routing rules, classifications, and debug tools.</p>
+</a>
+<a href="schedules.html" class="card">
+<h2>Schedules</h2>
+<p>Business hours and holiday schedules.</p>
 </a>
 </div>
 </body>
@@ -2696,6 +2772,7 @@ def cmd_generate(args):
         map_path = os.path.join(site_dir, "callhandler_map.html")
         report_path = os.path.join(site_dir, "callhandler_report.html")
         flow_path = os.path.join(site_dir, "callflow.html")
+        sched_path = os.path.join(site_dir, "schedules.html")
         index_path = os.path.join(site_dir, "index.html")
 
         print(f"\nGenerating reports in {site_dir}/...")
@@ -2710,6 +2787,10 @@ def cmd_generate(args):
         flow_html = generate_callflow_html(nodes, edges, site_name=site_name, host=host)
         with open(flow_path, "w", encoding="utf-8") as f:
             f.write(flow_html)
+
+        sched_html = generate_schedules_html(holiday_schedules, schedules, site_name=site_name, host=host)
+        with open(sched_path, "w", encoding="utf-8") as f:
+            f.write(sched_html)
 
         idx_html = generate_index_html(site_name=site_name)
         with open(index_path, "w", encoding="utf-8") as f:
