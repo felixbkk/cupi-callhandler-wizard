@@ -2188,6 +2188,11 @@ PROBE_ENDPOINTS = [
     ("/vmrest/handlers/callhandlers/{id}/callerinput", "Caller Input lowercase (sample)"),
     ("/vmrest/handlers/callhandlers/{id}/callhandlerowner", "Call Handler Owner (sample)"),
     ("/vmrest/handlers/callhandlers/{id}/transferrule", "Transfer Rule singular (sample)"),
+    # Directory handler sub-resources
+    ("/vmrest/handlers/directoryhandlers/{dir_id}", "Directory Handler detail (sample)"),
+    ("/vmrest/handlers/directoryhandlers/{dir_id}/directoryhandlerstreamfiles", "Directory Handler Greetings (sample)"),
+    # Interview handler sub-resources
+    ("/vmrest/handlers/interviewhandlers/{ih_id}/interviewquestions", "Interview Questions (sample)"),
     # Other
     ("/vmrest/callhandlertemplates", "Call Handler Templates"),
     ("/vmrest/notificationdevices", "Notification Devices"),
@@ -2213,6 +2218,8 @@ def cmd_probe(args):
     sample_id = None
     sample_sched_id = None
     sample_schedset_id = None
+    sample_dir_id = None
+    sample_ih_id = None
     try:
         data = api_get(session, host, "/vmrest/handlers/callhandlers", {"rowsPerPage": 1})
         handlers = data.get("Callhandler", [])
@@ -2240,6 +2247,24 @@ def cmd_probe(args):
             sample_schedset_id = ssets[0].get("ObjectId", "")
     except Exception:
         pass
+    try:
+        data = api_get(session, host, "/vmrest/handlers/directoryhandlers", {"rowsPerPage": 1})
+        dhs = data.get("DirectoryHandler", [])
+        if isinstance(dhs, dict):
+            dhs = [dhs]
+        if dhs:
+            sample_dir_id = dhs[0].get("ObjectId", "")
+    except Exception:
+        pass
+    try:
+        data = api_get(session, host, "/vmrest/handlers/interviewhandlers", {"rowsPerPage": 1})
+        ihs = data.get("InterviewHandler", [])
+        if isinstance(ihs, dict):
+            ihs = [ihs]
+        if ihs:
+            sample_ih_id = ihs[0].get("ObjectId", "")
+    except Exception:
+        pass
 
     print(f"\n{'='*70}")
     print(f"CUPI ENDPOINT PROBE — {host}")
@@ -2253,6 +2278,8 @@ def cmd_probe(args):
         "{id}": sample_id,
         "{sched_id}": sample_sched_id,
         "{schedset_id}": sample_schedset_id,
+        "{dir_id}": sample_dir_id,
+        "{ih_id}": sample_ih_id,
     }
 
     for path, label in PROBE_ENDPOINTS:
