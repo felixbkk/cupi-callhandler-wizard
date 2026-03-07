@@ -10,6 +10,8 @@ import getpass
 import json
 import os
 import platform
+import shutil
+import webbrowser
 import re
 import subprocess
 import sys
@@ -758,19 +760,15 @@ D3_CDN_URL = "https://d3js.org/d3.v7.min.js"
 D3_FILENAME = "d3.v7.min.js"
 
 
-def download_d3(site_dir):
-    """Download D3.js into the report directory for offline use."""
+def copy_d3(site_dir):
+    """Copy bundled D3.js into the report directory for offline use."""
     dest = os.path.join(site_dir, D3_FILENAME)
+    src = os.path.join(os.path.dirname(os.path.abspath(__file__)), D3_FILENAME)
     try:
-        print("Downloading D3.js for offline use...")
-        resp = requests.get(D3_CDN_URL, timeout=15)
-        resp.raise_for_status()
-        with open(dest, "w", encoding="utf-8") as f:
-            f.write(resp.text)
-        print(f"  Saved {D3_FILENAME}")
+        shutil.copy2(src, dest)
         return True
     except Exception as e:
-        print(f"  Warning: Could not download D3.js: {e}")
+        print(f"  Warning: Could not copy bundled D3.js: {e}")
         print("  Graph will require internet access to load D3 from CDN")
         return False
 
@@ -1871,7 +1869,7 @@ def cmd_generate(args):
         for cls, count in sorted(classifications.items()):
             print(f"  {cls}: {count}")
 
-        d3_local = download_d3(site_dir)
+        d3_local = copy_d3(site_dir)
 
         map_path = os.path.join(site_dir, "callhandler_map.html")
         report_path = os.path.join(site_dir, "callhandler_report.html")
@@ -1887,7 +1885,8 @@ def cmd_generate(args):
             f.write(table_html)
 
         print(f"\nDone! Reports written to {site_dir}/")
-        print(f"  Open {map_path} (graph) or {report_path} (table) in a browser.")
+
+        webbrowser.open(f"file://{os.path.abspath(map_path)}")
     finally:
         tee.close()
 
