@@ -134,7 +134,7 @@ def fetch_call_handlers(session, host):
                     if not h.get("DisplayName", "").strip().isdigit()]
     skipped = before - len(all_handlers)
     if skipped:
-        print(f"  Filtered out {skipped} voicemail handlers ({before} -> {len(all_handlers)})")
+        print(f"  Filtered out {skipped} voicemail handlers ({before} → {len(all_handlers)})")
 
     return all_handlers
 
@@ -334,7 +334,7 @@ def greeting_audio_url(host, handler_id, greeting_type, language_code="1033"):
 def build_graph(call_handlers, interview_handlers, routing_rules, session, host):
     nodes = {}
     edges = []
-    handler_map = {}  # ObjectId -> handler info
+    handler_map = {}  # ObjectId → handler info
 
     # Add call handler nodes
     for ch in call_handlers:
@@ -493,7 +493,7 @@ def build_graph(call_handlers, interview_handlers, routing_rules, session, host)
     # Build adjacency maps
     incoming = {nid: set() for nid in nodes}
     outgoing = {nid: set() for nid in nodes}
-    outgoing_by_schedule = {}  # nid -> {schedule -> set of target nids}
+    outgoing_by_schedule = {}  # nid → {schedule → set of target nids}
     for edge in edges:
         src = edge["source"]
         tgt = edge["target"]
@@ -1312,7 +1312,7 @@ class TeeLogger:
     """Write to both stdout and a log file."""
     def __init__(self, log_path):
         self.terminal = sys.stdout
-        self.log = open(log_path, "w")
+        self.log = open(log_path, "w", encoding="utf-8")
 
     def write(self, message):
         self.terminal.write(message)
@@ -1721,7 +1721,7 @@ def cmd_orphans(args):
             connections = []
             for e in out_edges:
                 tgt = node_map.get(e["target"], {})
-                connections.append(f"-> {tgt.get('name', '?')} [{e['label']}]")
+                connections.append(f"→ {tgt.get('name', '?')} [{e['label']}]")
             for e in in_edges:
                 src = node_map.get(e["source"], {})
                 connections.append(f"← {src.get('name', '?')} [{e['label']}]")
