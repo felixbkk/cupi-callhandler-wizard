@@ -719,6 +719,7 @@ def build_graph(call_handlers, interview_handlers, routing_rules, session, host,
                     "greeting": greeting_name,
                     "url": audio_url,
                     "schedule": gr_schedule,
+                    "enabled": enabled,
                 })
             # Routing: only follow after-greeting actions for enabled greetings
             if not enabled:
@@ -731,6 +732,11 @@ def build_graph(call_handlers, interview_handlers, routing_rules, session, host,
                     "source": oid, "target": target,
                     "label": f"After:{greeting_name}", "schedule": gr_schedule,
                 })
+
+    # Sort audio entries: Standard first, then Off Hours, Holiday, Alternate, rest
+    _AUDIO_ORDER = {"Standard": 0, "Off Hours": 1, "Holiday": 2, "Alternate": 3}
+    for node in nodes.values():
+        node["audio"].sort(key=lambda a: _AUDIO_ORDER.get(a.get("greeting", ""), 99))
 
     # Build adjacency maps
     incoming = {nid: set() for nid in nodes}
@@ -840,6 +846,7 @@ NAV_PAGES = [
 def floating_nav_html(current_file):
     """Generate a floating navigation pill (CSS + HTML) for use on any page.
 
+    Includes dark/light mode toggle with localStorage persistence.
     current_file: the filename of the page being generated (e.g. 'callhandler_map.html')
     """
     links = []
@@ -857,10 +864,136 @@ def floating_nav_html(current_file):
 .fnav a {{ color: #1abc9c; text-decoration: none; padding: 3px 8px; border-radius: 4px; white-space: nowrap; }}
 .fnav a:hover {{ background: #16213e; color: #fff; }}
 .fnav-current {{ color: #e94560; font-weight: 700; padding: 3px 8px; white-space: nowrap; }}
+.fnav-theme {{ cursor: pointer; padding: 3px 8px; border: none; background: none; font-size: 14px; line-height: 1; border-left: 1px solid #0f3460; margin-left: 2px; }}
+
+/* ── Light mode overrides ── */
+body.light-mode {{ background: #f0f2f5 !important; color: #1f2328 !important; }}
+body.light-mode h1, body.light-mode h2, body.light-mode h3 {{ color: #cf222e !important; }}
+body.light-mode .fnav {{ background: #fff; border-color: #d0d7de; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }}
+body.light-mode .fnav a {{ color: #0969da; }}
+body.light-mode .fnav a:hover {{ background: #f0f2f5; color: #0550ae; }}
+body.light-mode .fnav-current {{ color: #cf222e; }}
+body.light-mode .fnav-theme {{ border-color: #d0d7de; }}
+
+body.light-mode table {{ border-color: #d0d7de; }}
+body.light-mode th {{ background: #e8ecf0 !important; color: #cf222e !important; border-color: #d0d7de !important; }}
+body.light-mode td {{ border-color: #d0d7de !important; color: #1f2328; }}
+body.light-mode tr:hover {{ background: #f6f8fa !important; }}
+
+body.light-mode .muted {{ color: #888 !important; }}
+body.light-mode .state-standard {{ color: #1a7f37 !important; }}
+body.light-mode .state-offhours {{ color: #bf8700 !important; }}
+body.light-mode .state-holiday {{ color: #cf222e !important; }}
+body.light-mode .reason {{ color: #666 !important; }}
+
+body.light-mode .note {{ background: #fff3cd; border-left-color: #cf222e; color: #1f2328; }}
+body.light-mode .note strong {{ color: #cf222e; }}
+body.light-mode .back-to-top {{ background: #e8ecf0; border-color: #d0d7de; color: #1f2328; }}
+body.light-mode .back-to-top:hover {{ background: #d0d7de; }}
+
+body.light-mode .copy-btn {{ background: #f0f2f5; border-color: #d0d7de; color: #666; }}
+body.light-mode .copy-btn:hover {{ color: #1f2328; border-color: #cf222e; }}
+
+/* Sidebar & panels */
+body.light-mode #sidebar {{ background: #fff !important; border-color: #d0d7de !important; }}
+body.light-mode #sidebar h2, body.light-mode #sidebar h3 {{ color: #cf222e !important; }}
+body.light-mode .controls {{ background: #f6f8fa !important; border-color: #d0d7de !important; }}
+body.light-mode .toggle-btn {{ background: #f0f2f5 !important; border-color: #d0d7de !important; color: #1f2328 !important; }}
+body.light-mode .toggle-btn.active {{ background: #0969da !important; border-color: #0550ae !important; color: #fff !important; }}
+body.light-mode #node-details {{ background: #f6f8fa !important; border-color: #d0d7de !important; }}
+body.light-mode .detail-label {{ color: #666 !important; }}
+body.light-mode .detail-value {{ color: #1f2328 !important; }}
+
+/* Graph */
+body.light-mode #graph-container {{ background: #f0f2f5 !important; }}
+
+/* Callflow cards */
+body.light-mode .topbar {{ background: #fff !important; border-color: #d0d7de !important; }}
+body.light-mode .flow-card {{ background: #fff !important; border-color: #d0d7de !important; }}
+body.light-mode .flow-card.entry-point {{ border-color: #1a7f37 !important; }}
+body.light-mode .flow-card.handler {{ border-color: #0969da !important; }}
+body.light-mode .flow-card.primary {{ border-color: #bf8700 !important; box-shadow: 0 0 12px rgba(191,135,0,0.15) !important; }}
+body.light-mode .flow-card.dead-end {{ border-color: #cf222e !important; }}
+body.light-mode .flow-card.expanded {{ border-color: #cf222e !important; box-shadow: 0 0 10px rgba(207,34,46,0.15) !important; }}
+body.light-mode .card-header {{ border-color: #d0d7de !important; }}
+body.light-mode .card-name {{ color: #1f2328 !important; }}
+body.light-mode .card-ext {{ color: #666 !important; }}
+body.light-mode .schedule-pill {{ background: #e8ecf0 !important; color: #0969da !important; }}
+body.light-mode .type-pill {{ background: #e8ecf0 !important; }}
+body.light-mode .menu-row {{ border-color: #d0d7de !important; }}
+body.light-mode .menu-key {{ background: #e8ecf0 !important; color: #1f2328 !important; }}
+body.light-mode .menu-target {{ color: #0969da !important; }}
+body.light-mode .audio-row {{ background: #f6f8fa !important; border-color: #d0d7de !important; }}
+body.light-mode .audio-badge {{ color: #0969da !important; }}
+body.light-mode .audio-link {{ color: #0969da !important; }}
+
+/* Breadcrumb & controls */
+body.light-mode .breadcrumb {{ background: #fff !important; border-color: #d0d7de !important; }}
+body.light-mode .bc-step {{ color: #0969da !important; }}
+body.light-mode .bc-step:hover {{ background: #f0f2f5 !important; }}
+body.light-mode .bc-current {{ color: #cf222e !important; }}
+body.light-mode .bc-sep {{ color: #999 !important; }}
+body.light-mode .schedule-btn {{ background: #f0f2f5 !important; border-color: #d0d7de !important; color: #1f2328 !important; }}
+body.light-mode .schedule-btn:hover {{ border-color: #cf222e !important; }}
+body.light-mode .schedule-btn.active {{ background: #0969da !important; border-color: #0550ae !important; color: #fff !important; }}
+body.light-mode .copy-link-btn {{ border-color: #d0d7de !important; background: #f0f2f5 !important; color: #0969da !important; }}
+
+/* Report page specifics */
+body.light-mode .stats {{ background: #fff !important; border-color: #d0d7de !important; }}
+body.light-mode .summary {{ background: #fff !important; }}
+body.light-mode .toc {{ background: #fff !important; border-color: #d0d7de !important; }}
+body.light-mode .toc a {{ color: #0969da !important; }}
+body.light-mode .sched-tag {{ background: #e8ecf0 !important; color: #666 !important; }}
+
+/* Debug panel */
+body.light-mode .debug-toggle {{ background: #e8ecf0 !important; border-color: #d0d7de !important; color: #666 !important; }}
+body.light-mode #debugPanel {{ background: #fff !important; border-color: #d0d7de !important; }}
+body.light-mode #debugPanel input {{ background: #f6f8fa !important; border-color: #d0d7de !important; color: #1f2328 !important; }}
+body.light-mode .debug-btn {{ background: #f0f2f5 !important; border-color: #d0d7de !important; color: #1f2328 !important; }}
+body.light-mode #debugOutput {{ background: #f6f8fa !important; color: #1f2328 !important; }}
+
+/* Index page */
+body.light-mode .card {{ background: #fff !important; border-color: #d0d7de !important; }}
+body.light-mode .card:hover {{ border-color: #0969da !important; }}
+body.light-mode .card h2 {{ color: #cf222e !important; }}
+body.light-mode .card p {{ color: #666 !important; }}
+
+/* Flow tree in report */
+body.light-mode .flow-handler {{ color: #0969da !important; }}
+body.light-mode .flow-label {{ color: #bf8700 !important; }}
+body.light-mode .flow-visited {{ color: #888 !important; }}
+
+/* Section headers */
+body.light-mode .section-header {{ border-color: #d0d7de !important; }}
+body.light-mode .no-transitions {{ color: #888 !important; }}
 </style>
 <div class="fnav">
 {links_html}
-</div>'''
+<button class="fnav-theme" id="themeToggle" title="Toggle light/dark mode"></button>
+</div>
+<script>
+(function() {{
+    var btn = document.getElementById("themeToggle");
+    var theme = localStorage.getItem("chw-theme") || "dark";
+    function apply(t) {{
+        theme = t;
+        if (t === "light") {{
+            document.body.classList.add("light-mode");
+            btn.textContent = "\\u263E";
+            btn.title = "Switch to dark mode";
+        }} else {{
+            document.body.classList.remove("light-mode");
+            btn.textContent = "\\u2600";
+            btn.title = "Switch to light mode";
+        }}
+        localStorage.setItem("chw-theme", t);
+    }}
+    apply(theme);
+    btn.addEventListener("click", function() {{
+        apply(theme === "dark" ? "light" : "dark");
+    }});
+}})();
+</script>'''
 
 
 D3_CDN_URL = "https://d3js.org/d3.v7.min.js"
@@ -1350,7 +1483,8 @@ function showDetails(d) {{
     if (d.audio && d.audio.length) {{
         html += '<h3 style="margin-top:12px;">Audio</h3>';
         d.audio.forEach(a => {{
-            html += '<div class="detail-row" style="padding:4px 0;"><span style="color:#1abc9c; font-size:12px;">&#9835; ' + esc(a.greeting) + '</span><br>' +
+            const disTag = a.enabled === false ? ' <span style="color:#e74c3c; font-size:10px;">(disabled)</span>' : '';
+            html += '<div class="detail-row" style="padding:4px 0;"><span style="color:#1abc9c; font-size:12px;">&#9835; ' + esc(a.greeting) + disTag + '</span><br>' +
                 '<audio controls preload="none" style="width:100%; height:28px; margin-top:2px;"><source src="' + esc(a.url) + '" type="audio/wav"></audio></div>';
         }});
     }}
@@ -1733,6 +1867,7 @@ function renderTable() {{
         const audioList = n.audio || [];
         const audioHtml = audioList.length
             ? audioList.map(a => '<span class="audio-link">' + esc(a.greeting) + '</span>' + schedTag(a.schedule) +
+                (a.enabled === false ? ' <span style="color:#e74c3c; font-size:10px;">(disabled)</span>' : '') +
                 '<br><audio controls preload="none" style="width:180px; height:24px;"><source src="' + esc(a.url) + '" type="audio/wav"></audio>').join("<br>")
             : '<span class="muted">&mdash;</span>';
 
@@ -1824,6 +1959,7 @@ function renderCallFlowTrees(activeEdges) {{
             if (!node.audio.length) return [];
             const prefix = "  ".repeat(indent);
             return node.audio.map(a => prefix + '<span class="audio-link">&#9835; ' + esc(a.greeting) + ' greeting</span>' + schedTag(a.schedule) +
+                (a.enabled === false ? ' <span style="color:#e74c3c; font-size:10px;">(disabled)</span>' : '') +
                 '<br>' + prefix + '<audio controls preload="none" style="width:180px; height:24px;"><source src="' + esc(a.url) + '" type="audio/wav"></audio>');
         }}
 
@@ -2329,6 +2465,7 @@ function createCard(node, isEntry) {{
             row.innerHTML = '&#9835; <span class="audio-badge">' + esc(a.greeting) + ' greeting</span>' +
                 (gUrl ? ' <a href="' + esc(gUrl) + '" target="_blank" style="color:#888; font-size:10px; text-decoration:none;" title="Edit in Unity">&#9881;</a>' : '') +
                 schedTag(a.schedule) +
+                (a.enabled === false ? ' <span style="color:#e74c3c; font-size:10px;">(disabled)</span>' : '') +
                 '<br><audio controls preload="none" style="width:100%; height:28px; margin-top:2px;"><source src="' + esc(a.url) + '" type="audio/wav"></audio>';
             card.appendChild(row);
         }});
