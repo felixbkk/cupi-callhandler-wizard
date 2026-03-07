@@ -2023,6 +2023,8 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans
 .entry-select label {{ font-size: 13px; color: #888; }}
 .entry-select select {{ padding: 6px 12px; border: 1px solid #0f3460; background: #0d1b2a; color: #e0e0e0; border-radius: 4px; font-size: 13px; max-width: 420px; }}
 .breadcrumb {{ position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: 0; padding: 10px 24px; background: #0d1b2a; border-bottom: 1px solid #0f3460; flex-wrap: wrap; min-height: 40px; }}
+.copy-link-btn {{ margin-left: auto; padding: 4px 10px; border: 1px solid #0f3460; background: #16213e; color: #1abc9c; cursor: pointer; border-radius: 4px; font-size: 11px; white-space: nowrap; transition: all 0.2s; }}
+.copy-link-btn:hover {{ background: #0f3460; border-color: #1abc9c; }}
 .bc-step {{ padding: 4px 10px; border-radius: 4px; font-size: 13px; color: #3498db; cursor: pointer; white-space: nowrap; }}
 .bc-step:hover {{ background: #16213e; }}
 .bc-current {{ color: #e94560; font-weight: 700; }}
@@ -2340,11 +2342,84 @@ function updateBreadcrumb() {{
         const node = nodeMap[step.nodeId];
         const name = node ? node.name : "?";
         const isLast = i === trailPath.length - 1;
-        const labelHtml = i > 0 ? '<span class="bc-label">[' + esc(step.label) + ']</span><span class="bc-sep"> &gt; </span>' : '';
         return (i > 0 ? '<span class="bc-sep"> &gt; </span>' : '') +
             (i > 0 && step.label ? '<span class="bc-label">[' + esc(step.label) + ']</span><span class="bc-sep"> &gt; </span>' : '') +
             '<span class="bc-step' + (isLast ? ' bc-current' : '') + '" onclick="scrollToCard(\\'' + step.nodeId + '\\')">' + esc(name) + '</span>';
     }}).join("");
+    if (trailPath.length > 1) {{
+        bc.innerHTML += '<button class="copy-link-btn" onclick="copyDeepLink()">Copy Link</button>';
+    }}
+    syncHash();
+}}
+
+function syncHash() {{
+    if (!trailPath.length) {{ history.replaceState(null, "", location.pathname); return; }}
+    const entry = trailPath[0].nodeId;
+    // Steps after the auto-followed rule target (index 0 = entry, index 1 = rule target if routing rule)
+    const startNode = nodeMap[entry];
+    const skipCount = (startNode && startNode.type === "routingrule") ? 2 : 1;
+    const steps = trailPath.slice(skipCount).map(s => encodeURIComponent(s.label) + "~" + s.nodeId);
+    let h = "s=" + activeSchedule + "&e=" + entry;
+    if (steps.length) h += "&p=" + steps.join(",");
+    history.replaceState(null, "", "#" + h);
+}}
+
+function copyDeepLink() {{
+    const url = location.href;
+    navigator.clipboard.writeText(url).then(() => {{
+        const btn = document.querySelector(".copy-link-btn");
+        if (btn) {{ btn.textContent = "Copied!"; setTimeout(() => btn.textContent = "Copy Link", 1500); }}
+    }}).catch(() => {{
+        // Fallback for non-HTTPS contexts
+        const ta = document.createElement("textarea");
+        ta.value = location.href;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+        const btn = document.querySelector(".copy-link-btn");
+        if (btn) {{ btn.textContent = "Copied!"; setTimeout(() => btn.textContent = "Copy Link", 1500); }}
+    }});
+}}
+
+function loadFromHash() {{
+    const h = location.hash.replace(/^#/, "");
+    if (!h) return false;
+    const params = {{}};
+    h.split("&").forEach(p => {{ const [k, ...v] = p.split("="); params[k] = v.join("="); }});
+    if (!params.e) return false;
+
+    // Set schedule
+    if (params.s && ["standard", "offhours", "holiday", "all"].includes(params.s)) {{
+        activeSchedule = params.s;
+        document.querySelectorAll(".schedule-btn").forEach(btn => {{
+            btn.classList.toggle("active", btn.dataset.schedule === params.s);
+        }});
+    }}
+
+    // Set entry point
+    populateEntryPoints();
+    const sel = document.getElementById("entryPoint");
+    if (!sel.querySelector('option[value="' + params.e + '"]')) return false;
+    sel.value = params.e;
+    renderFlow();
+
+    // Replay path steps
+    if (params.p) {{
+        const steps = params.p.split(",").map(s => {{
+            const tilde = s.indexOf("~");
+            return {{ label: decodeURIComponent(s.substring(0, tilde)), nodeId: s.substring(tilde + 1) }};
+        }});
+        for (const step of steps) {{
+            const lastNodeId = trailPath[trailPath.length - 1].nodeId;
+            const lastCard = document.getElementById("card-" + lastNodeId);
+            if (!lastCard) break;
+            const edge = data.edges.find(e => e.source === lastNodeId && e.target === step.nodeId && e.label === step.label && edgeMatch(e));
+            if (!edge) break;
+            expandTarget(edge, lastCard);
+        }}
+    }}
+    return true;
 }}
 
 function scrollToCard(nodeId) {{
@@ -2359,7 +2434,9 @@ function scrollToCard(nodeId) {{
 
 // Init
 populateEntryPoints();
-renderFlow();
+if (!loadFromHash()) {{
+    renderFlow();
+}}
 </script>
 </body>
 </html>'''
