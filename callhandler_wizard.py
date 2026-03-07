@@ -95,6 +95,17 @@ def fetch_site_id(session, host):
     return parsed.hostname or "unknown-site"
 
 
+def friendly_site_name(site_id):
+    """Extract a friendly display name from the server ID.
+
+    Strips common CUC suffixes like '-ch-cuc1', '-cuc-pub', etc.
+    'nairobi-ch-cuc1' -> 'Nairobi', 'london-nyc-ch-cuc2' -> 'London-Nyc'
+    """
+    name = re.sub(r'[-_]ch[-_]cuc\d*$', '', site_id, flags=re.IGNORECASE)
+    name = re.sub(r'[-_]cuc[-_]?(pub|sub)?\d*$', '', name, flags=re.IGNORECASE)
+    return name.replace('-', ' ').replace('_', ' ').strip().title() or site_id
+
+
 def sanitize_dirname(name):
     """Make a string safe for use as a directory name."""
     return re.sub(r'[^\w\-.]', '_', name).strip('_')
@@ -781,15 +792,16 @@ def copy_d3(site_dir):
         return False
 
 
-def generate_html(nodes, edges, d3_local=False):
+def generate_html(nodes, edges, d3_local=False, site_name=""):
     graph_data = json.dumps({"nodes": nodes, "links": edges})
     d3_tag = f'<script src="{D3_FILENAME}"></script>' if d3_local else f'<script src="{D3_CDN_URL}"></script>'
+    title_prefix = f"{site_name} — " if site_name else ""
     return f'''<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CUC Call Handler Routing Map</title>
+<title>{title_prefix}Call Handler Routing Map</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='12' fill='%231a1a2e'/><path d='M16 20a4 4 0 014-4h8a4 4 0 014 4v24a4 4 0 01-4 4h-8a4 4 0 01-4-4z' fill='%23e94560'/><circle cx='24' cy='42' r='2' fill='%231a1a2e'/><path d='M36 28h10m0 0l-4-4m4 4l-4 4' stroke='%232ecc71' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/><path d='M36 38h10m0 0l-4-4m4 4l-4 4' stroke='%233498db' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/></svg>">
 {d3_tag}
 <style>
@@ -822,7 +834,7 @@ marker {{ fill: #666; }}
 <svg></svg>
 </div>
 <div id="sidebar">
-<h2>Call Handler Map</h2>
+<h2>{title_prefix}Call Handler Map</h2>
 <a href="callhandler_report.html" style="color:#1abc9c; font-size:13px;">Switch to Table Report &rarr;</a>
 <div class="controls">
 <h3>Layout</h3>
@@ -1247,7 +1259,8 @@ def _active_days(detail):
     return ", ".join(days)
 
 
-def generate_table_html(nodes, edges, holiday_schedules, schedules):
+def generate_table_html(nodes, edges, holiday_schedules, schedules, site_name=""):
+    title_prefix = f"{site_name} — " if site_name else ""
     report_data = json.dumps({
         "nodes": nodes,
         "edges": edges,
@@ -1276,7 +1289,7 @@ def generate_table_html(nodes, edges, holiday_schedules, schedules):
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CUC Call Handler Report</title>
+<title>{title_prefix}Call Handler Report</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='12' fill='%231a1a2e'/><path d='M16 20a4 4 0 014-4h8a4 4 0 014 4v24a4 4 0 01-4 4h-8a4 4 0 01-4-4z' fill='%23e94560'/><circle cx='24' cy='42' r='2' fill='%231a1a2e'/><path d='M36 28h10m0 0l-4-4m4 4l-4 4' stroke='%232ecc71' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/><path d='M36 38h10m0 0l-4-4m4 4l-4 4' stroke='%233498db' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/></svg>">
 <style>
 * {{ margin: 0; padding: 0; box-sizing: border-box; }}
@@ -1331,7 +1344,7 @@ tr:hover {{ background: #16213e; }}
 </style>
 </head>
 <body>
-<h1>CUC Call Handler Report</h1>
+<h1>{title_prefix}Call Handler Report</h1>
 <a href="callhandler_map.html" style="color:#1abc9c; font-size:13px;">&larr; Switch to Graph View</a>
 <div id="stats" class="stats"></div>
 <div id="summary" class="summary"></div>
@@ -1910,6 +1923,7 @@ def cmd_generate(args):
     site_id = fetch_site_id(session, host)
     print(f"  Site: {site_id}")
 
+    site_name = friendly_site_name(site_id)
     site_dir = prepare_site_dir(site_id)
 
     # Start logging to file
@@ -1918,7 +1932,7 @@ def cmd_generate(args):
     sys.stdout = tee
     try:
         print(f"Log: {log_path}")
-        print(f"Site: {site_id}")
+        print(f"Site: {site_id} ({site_name})")
         print(f"Host: {host}")
         print(f"User: {args.user}")
         print(f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
@@ -1987,12 +2001,12 @@ def cmd_generate(args):
         report_path = os.path.join(site_dir, "callhandler_report.html")
 
         print(f"\nGenerating {map_path}...")
-        html = generate_html(nodes, edges, d3_local=d3_local)
+        html = generate_html(nodes, edges, d3_local=d3_local, site_name=site_name)
         with open(map_path, "w", encoding="utf-8") as f:
             f.write(html)
 
         print(f"Generating {report_path}...")
-        table_html = generate_table_html(nodes, edges, holiday_schedules, schedules)
+        table_html = generate_table_html(nodes, edges, holiday_schedules, schedules, site_name=site_name)
         with open(report_path, "w", encoding="utf-8") as f:
             f.write(table_html)
 
