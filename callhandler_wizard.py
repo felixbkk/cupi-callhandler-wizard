@@ -719,7 +719,8 @@ def _conv_suffix(conversation):
 
 
 def _add_route_edge(nodes, edges, source_id, action, target_id, conversation,
-                    label, schedule="always", dir_handler_map=None, display_name=""):
+                    label, schedule="always", dir_handler_map=None, display_name="",
+                    alt_contact_ext="", extension_map=None):
     """Process a routing action: create target node if needed and add edge."""
     if action == ACTION_GOTO and target_id:
         _ensure_handler_node(nodes, target_id, conversation, dir_handler_map, display_name)
@@ -732,6 +733,22 @@ def _add_route_edge(nodes, edges, source_id, action, target_id, conversation,
         _ensure_action_node(nodes, action_node_id, CONVERSATION_LABELS.get(conversation, conversation))
         edges.append({
             "source": source_id, "target": action_node_id,
+            "label": label, "schedule": schedule,
+        })
+    elif action == ACTION_XFER_ALT and alt_contact_ext:
+        # Resolve to the actual phone number from the handler's Alternate transfer rule
+        ext_map = extension_map or {}
+        resolved_name = ext_map.get(alt_contact_ext, "")
+        display = f"{resolved_name} (x{alt_contact_ext})" if resolved_name else f"Ext {alt_contact_ext}"
+        phone_id = f"phone_{alt_contact_ext}"
+        if phone_id not in nodes:
+            nodes[phone_id] = {
+                "id": phone_id, "name": display,
+                "extension": alt_contact_ext,
+                "type": "phone", "classification": "normal",
+            }
+        edges.append({
+            "source": source_id, "target": phone_id,
             "label": label, "schedule": schedule,
         })
     elif action in (ACTION_HANGUP, ACTION_RESTART_GREETING, ACTION_SKIP_GREETING,
@@ -936,6 +953,13 @@ def build_graph(call_handlers, interview_handlers, routing_rules, session, host,
         t_xfer_total += t_x
         t_greet_total += t_g
 
+        # Extract alternate contact extension from transfer rules (needed for Action=7)
+        alt_contact_ext = ""
+        for tr in transfer_rules:
+            if str(tr.get("RuleIndex", "")) == "Alternate":
+                alt_contact_ext = tr.get("Extension", "")
+                break
+
         # Menu entries
         has_timeout_key = False
         unlocked_keys = []
@@ -959,7 +983,8 @@ def build_graph(call_handlers, interview_handlers, routing_rules, session, host,
             _add_route_edge(nodes, edges, oid, action,
                 target_id,
                 entry.get("TargetConversation", ""),
-                f"Key {key}", dir_handler_map=dir_handler_map)
+                f"Key {key}", dir_handler_map=dir_handler_map,
+                alt_contact_ext=alt_contact_ext, extension_map=ext_map)
         # Check for missing timeout handler (no * key configured)
         active_keys = [e for e in menu_entries if str(e.get("Action", "0")) != ACTION_IGNORE]
         if active_keys and not has_timeout_key:
@@ -1062,12 +1087,11 @@ def build_graph(call_handlers, interview_handlers, routing_rules, session, host,
             # Warn on after-greeting = take message (voicemail behavior on an AA)
             if action == ACTION_TAKE_MSG:
                 nodes[oid]["warnings"].append(f"{greeting_name} greeting: after-greeting action is Take Message")
-            if action == ACTION_GOTO and target:
-                _ensure_handler_node(nodes, target, dir_handler_map=dir_handler_map)
-                edges.append({
-                    "source": oid, "target": target,
-                    "label": f"After:{greeting_name}", "schedule": gr_schedule,
-                })
+            _add_route_edge(nodes, edges, oid, action, target,
+                gr.get("AfterGreetingTargetConversation", ""),
+                f"After:{greeting_name}", schedule=gr_schedule,
+                dir_handler_map=dir_handler_map,
+                alt_contact_ext=alt_contact_ext, extension_map=ext_map)
 
         # Warn if caller input is disabled but handler has active menu keys
         if has_ignore_digits and active_keys:
