@@ -1244,6 +1244,7 @@ NAV_PAGES = [
     ("schedules.html", "Schedules"),
     ("test_times.html", "Test Times"),
     ("audit.html", "Audit"),
+    ("help.html", "Help"),
 ]
 
 
@@ -4300,6 +4301,183 @@ document.getElementById("badge-sysdefault").innerHTML = badge(sysDefaultCount, "
 </html>'''
 
 
+def generate_help_html(site_name=""):
+    title_prefix = f"{site_name} — " if site_name else ""
+    return f'''<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{title_prefix}Help</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='12' fill='%231a1a2e'/><path d='M16 20a4 4 0 014-4h8a4 4 0 014 0v24a4 4 0 01-4 4h-8a4 4 0 01-4-4z' fill='%23e94560'/><circle cx='24' cy='42' r='2' fill='%231a1a2e'/><path d='M36 28h10m0 0l-4-4m4 4l-4 4' stroke='%232ecc71' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/><path d='M36 38h10m0 0l-4-4m4 4l-4 4' stroke='%233498db' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/></svg>">
+<style>
+* {{ margin: 0; padding: 0; box-sizing: border-box; }}
+body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #1a1a2e; color: #e0e0e0; padding: 24px; max-width: 900px; margin: 0 auto; }}
+h1 {{ color: #e94560; margin-bottom: 4px; }}
+.subtitle {{ color: #888; font-size: 14px; margin-bottom: 32px; }}
+h2 {{ color: #e94560; margin: 32px 0 12px 0; font-size: 20px; border-bottom: 1px solid #0f3460; padding-bottom: 8px; }}
+h3 {{ color: #1abc9c; margin: 20px 0 8px 0; font-size: 16px; }}
+p {{ line-height: 1.7; margin-bottom: 12px; font-size: 14px; }}
+ul, ol {{ margin: 8px 0 16px 24px; font-size: 14px; line-height: 1.8; }}
+li {{ margin-bottom: 4px; }}
+.section {{ background: #16213e; border: 1px solid #0f3460; border-radius: 8px; padding: 20px 24px; margin-bottom: 20px; }}
+.section h2 {{ margin-top: 0; }}
+.legend {{ display: flex; flex-wrap: wrap; gap: 12px; margin: 12px 0; }}
+.legend-item {{ display: flex; align-items: center; gap: 6px; font-size: 13px; }}
+.legend-dot {{ width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }}
+kbd {{ display: inline-block; background: #0f3460; border: 1px solid #1a4a7a; border-radius: 4px; padding: 1px 6px; font-family: monospace; font-size: 13px; color: #1abc9c; }}
+.tip {{ background: #0f3460; border-left: 3px solid #1abc9c; padding: 10px 14px; margin: 12px 0; border-radius: 0 6px 6px 0; font-size: 13px; }}
+.tip strong {{ color: #1abc9c; }}
+.warn {{ background: #3d1a1a; border-left: 3px solid #e94560; padding: 10px 14px; margin: 12px 0; border-radius: 0 6px 6px 0; font-size: 13px; }}
+.warn strong {{ color: #e94560; }}
+code {{ background: #0f3460; padding: 2px 6px; border-radius: 3px; font-size: 13px; color: #1abc9c; }}
+.back-to-top {{ position: fixed; bottom: 20px; right: 20px; background: #16213e; border: 1px solid #0f3460; color: #e0e0e0; padding: 8px 14px; border-radius: 6px; text-decoration: none; font-size: 14px; z-index: 9998; }}
+.back-to-top:hover {{ background: #0f3460; }}
+</style>
+</head>
+<body>
+<h1>Report Guide</h1>
+<p class="subtitle">How to use the Call Handler Wizard reports to understand and test your auto-attendant call flows.</p>
+
+<div class="section">
+<h2>Getting Started</h2>
+<p>These reports are a read-only snapshot of your Cisco Unity Connection auto-attendant configuration. Use them to understand how callers navigate your phone system, identify problems, and plan testing.</p>
+<p>Use the navigation bar in the top-right corner to move between pages. Click the sun/moon icon to toggle between dark and light mode &mdash; your preference is saved automatically.</p>
+</div>
+
+<div class="section">
+<h2>Pages Overview</h2>
+
+<h3>Home</h3>
+<p>Landing page showing the site name, when the report was generated, and links to all report pages.</p>
+
+<h3>Graph</h3>
+<p>Interactive visual map of all call handlers and how they connect. Each circle is a handler; lines show how calls flow between them.</p>
+<ul>
+<li><strong>Click</strong> a node to see its details in the sidebar &mdash; transfer rules, greetings, menu keys, and any warnings</li>
+<li><strong>Drag</strong> nodes to rearrange the layout; double-click to pin a node in place</li>
+<li><strong>Zoom</strong> with the scroll wheel, pan by dragging the background</li>
+<li>Use the layout buttons (Force / Hierarchical / Radial) to change how the graph is arranged</li>
+<li>Toggle orphans, unreachable handlers, and dead ends on or off using the filter buttons</li>
+<li>Colored lines indicate which schedule the connection is active during</li>
+</ul>
+
+<h3>Call Flow</h3>
+<p>Card-based interactive call flow. Select an entry point (routing rule) from the dropdown and click through the IVR step by step, just like a real caller would.</p>
+<ul>
+<li>Each card shows the handler name, extension, greeting audio, and available key presses</li>
+<li>Click a key to drill down to the next handler</li>
+<li>Warnings (misconfiguration issues) are shown directly on each card</li>
+<li>Use the breadcrumb trail at the top to jump back to earlier steps</li>
+</ul>
+
+<h3>Flow Trees</h3>
+<p>Text-based tree view of all call flows from each routing rule entry point. Use the schedule selector to see how routing changes during Standard hours, Off Hours, and Holidays.</p>
+<div class="tip"><strong>Tip:</strong> Use the "Copy as Text" button to paste a flow tree into an email or ticket for documentation.</div>
+
+<h3>Handlers</h3>
+<p>Searchable table listing every call handler with its routing rules, greetings, and menu keys. Use the schedule selector to compare how routing differs by time of day.</p>
+<ul>
+<li>Search by handler name, extension, type, or classification</li>
+<li>Click the audio player icons to hear greeting recordings</li>
+<li>The debug panel (bottom-right button) provides raw data lookup and a problem finder</li>
+</ul>
+
+<h3>Schedules</h3>
+<p>Shows all business hour schedules (which hours are "standard" vs "off hours" for each day) and holiday schedules (specific dates when holiday greetings play).</p>
+
+<h3>Test Times</h3>
+<p>Recommended times to test each schedule mode (Standard, Off Hours, transitions). Days with identical schedules are grouped together.</p>
+<p>The <strong>Dial Path Cheat Sheet</strong> at the bottom gives step-by-step dialing instructions to reach every handler from the main entry point &mdash; useful for systematic testing.</p>
+<div class="tip"><strong>Tip:</strong> To test holiday routing, create a temporary holiday in CUC for today's date, test, then remove it.</div>
+
+<h3>Audit</h3>
+<p>Automated findings organized by severity. Highlights misconfigurations, missing audio, schedule gaps, and other issues that may affect callers.</p>
+</div>
+
+<div class="section">
+<h2>Node Colors</h2>
+<p>Handlers are color-coded by their reachability in the call flow:</p>
+<div class="legend">
+<div class="legend-item"><span class="legend-dot" style="background:#2ecc71"></span> Root &mdash; entry point targeted by a routing rule</div>
+<div class="legend-item"><span class="legend-dot" style="background:#3498db"></span> Normal &mdash; reachable from an entry point</div>
+<div class="legend-item"><span class="legend-dot" style="background:#95a5a6"></span> Orphan &mdash; completely disconnected, no connections at all</div>
+<div class="legend-item"><span class="legend-dot" style="background:#e67e22"></span> Unreachable &mdash; has outgoing routes but nothing leads to it</div>
+<div class="legend-item"><span class="legend-dot" style="background:#e74c3c"></span> Dead End &mdash; callers can reach it but have nowhere to go</div>
+<div class="legend-item"><span class="legend-dot" style="background:#9b59b6"></span> Interview &mdash; interview handler</div>
+<div class="legend-item"><span class="legend-dot" style="background:#1abc9c"></span> Phone &mdash; transfer to a phone extension</div>
+</div>
+</div>
+
+<div class="section">
+<h2>Edge Colors (Connection Lines)</h2>
+<p>Lines between handlers are colored by when they are active:</p>
+<div class="legend">
+<div class="legend-item"><span class="legend-dot" style="background:#888"></span> Always &mdash; active regardless of schedule (menu keys, routing rules)</div>
+<div class="legend-item"><span class="legend-dot" style="background:#2ecc71"></span> Standard &mdash; active during business hours</div>
+<div class="legend-item"><span class="legend-dot" style="background:#e67e22"></span> Off Hours &mdash; active outside business hours</div>
+<div class="legend-item"><span class="legend-dot" style="background:#e74c3c"></span> Holiday &mdash; active on configured holidays</div>
+<div class="legend-item"><span class="legend-dot" style="background:#9b59b6"></span> Alternate &mdash; active when manually enabled (override)</div>
+</div>
+</div>
+
+<div class="section">
+<h2>Common Warnings</h2>
+<p>The audit system flags potential issues with your auto-attendant setup:</p>
+<ul>
+<li><strong>No timeout key (*)</strong> &mdash; Callers who don't press anything have no path forward and will hear silence</li>
+<li><strong>After-greeting = Hangup</strong> &mdash; The system disconnects the caller after the greeting plays</li>
+<li><strong>After-greeting = Take Message</strong> &mdash; Callers hear a voicemail prompt on what should be an auto-attendant</li>
+<li><strong>Supervised transfer</strong> &mdash; Should typically be Release for auto-attendant handlers</li>
+<li><strong>Alternate greeting/transfer enabled</strong> &mdash; An override is active that changes normal routing</li>
+<li><strong>Caller input disabled</strong> &mdash; Key presses are ignored during the greeting</li>
+<li><strong>Schedule gap</strong> &mdash; A handler is reachable during one schedule but not another</li>
+<li><strong>Self-loop / Circular routing</strong> &mdash; Callers get stuck in a loop</li>
+</ul>
+</div>
+
+<div class="section">
+<h2>Audio Playback</h2>
+<p>Greeting recordings are downloaded and embedded directly in the reports. Look for the audio player controls on the Call Flow, Flow Trees, and Handlers pages.</p>
+<ul>
+<li>Each greeting is labeled with its schedule (Standard, Off Hours, Holiday, Alternate)</li>
+<li>Greetings marked <span style="color:#e74c3c;">(disabled)</span> are configured but not currently active</li>
+<li>Greetings marked <span style="color:#e67e22;">(system default)</span> use the built-in CUC recording, not a custom upload</li>
+</ul>
+</div>
+
+<div class="section">
+<h2>Uploading Greeting Audio</h2>
+<p>When recording or uploading custom greetings to CUC, the audio file must be in WAV format. CUC accepts the following codecs:</p>
+<ul>
+<li><strong>PCM Linear (16-bit, 8 kHz, mono)</strong> &mdash; uncompressed, best compatibility</li>
+<li><strong>G.711 mu-law</strong> &mdash; standard telephony codec (North America / Japan)</li>
+<li><strong>G.711 a-law</strong> &mdash; standard telephony codec (Europe / international)</li>
+<li><strong>G.729a</strong> &mdash; compressed, lower bandwidth</li>
+<li><strong>GSM 06.10</strong> &mdash; compressed, sometimes used in older systems</li>
+</ul>
+<div class="tip"><strong>Recommended:</strong> Use <strong>PCM 16-bit, 8000 Hz, mono WAV</strong> for the widest compatibility. Most audio editors (Audacity, etc.) can export in this format.</div>
+<div class="warn"><strong>Rejected formats:</strong> MP3, M4A, WMA, stereo files, and sample rates other than 8000 Hz will be rejected by CUC.</div>
+</div>
+
+<div class="section">
+<h2>Tips</h2>
+<ul>
+<li>Reports are fully self-contained &mdash; no internet connection needed to view them</li>
+<li>All data is read-only; nothing in these reports can change your CUC configuration</li>
+<li>Share the entire report folder with colleagues &mdash; all pages and audio files are included</li>
+<li>Use the schedule selector on the Handlers and Flow Trees pages to compare Standard vs Off Hours vs Holiday routing side by side</li>
+<li>The Graph page is useful for getting a high-level picture; the Call Flow page is better for step-by-step tracing</li>
+<li>CUC admin links (where shown) open the handler directly in the Cisco Unity Connection admin interface</li>
+</ul>
+</div>
+
+<a href="#" class="back-to-top">&uarr; Top</a>
+{floating_nav_html("help.html")}
+</body>
+</html>'''
+
+
 def generate_index_html(site_name="", run_utc=None, host="", site_flag="", site_country=""):
     title_prefix = f"{site_name} — " if site_name else ""
     if site_flag:
@@ -4693,6 +4871,10 @@ def cmd_generate(args):
         audit_html = generate_audit_html(nodes, edges, holiday_audit, site_name=site_name, host=host)
         with open(audit_html_path, "w", encoding="utf-8") as f:
             f.write(audit_html)
+
+        help_html = generate_help_html(site_name=site_name)
+        with open(os.path.join(site_dir, "help.html"), "w", encoding="utf-8") as f:
+            f.write(help_html)
 
         site_flag, site_country = lookup_city_flag(site_name)
         idx_html = generate_index_html(site_name=site_name, run_utc=run_utc, host=host,
