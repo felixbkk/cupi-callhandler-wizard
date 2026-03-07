@@ -839,7 +839,8 @@ def build_graph(call_handlers, interview_handlers, routing_rules, session, host,
     # Sort audio entries: Standard first, then Off Hours, Holiday, Alternate, rest
     _AUDIO_ORDER = {"Standard": 0, "Off Hours": 1, "Holiday": 2, "Alternate": 3}
     for node in nodes.values():
-        node["audio"].sort(key=lambda a: _AUDIO_ORDER.get(a.get("greeting", ""), 99))
+        if "audio" in node:
+            node["audio"].sort(key=lambda a: _AUDIO_ORDER.get(a.get("greeting", ""), 99))
 
     # Build adjacency maps
     incoming = {nid: set() for nid in nodes}
