@@ -993,17 +993,16 @@ function unpinAll() {{
     updatePinIndicators();
 }}
 
-svg.append("defs").append("marker")
-    .attr("id", "arrowhead")
-    .attr("viewBox", "0 -5 10 10")
-    .attr("refX", 20)
-    .attr("refY", 0)
-    .attr("markerWidth", 6)
-    .attr("markerHeight", 6)
-    .attr("orient", "auto")
-    .append("path")
-    .attr("d", "M0,-5L10,0L0,5")
-    .attr("fill", "#666");
+const defs = svg.append("defs");
+[["arrowhead", "#666"], ["arrow-out", "#2ecc71"], ["arrow-in", "#3498db"]].forEach(([id, color]) => {{
+    defs.append("marker")
+        .attr("id", id)
+        .attr("viewBox", "0 -5 10 10")
+        .attr("refX", 20).attr("refY", 0)
+        .attr("markerWidth", 6).attr("markerHeight", 6)
+        .attr("orient", "auto")
+        .append("path").attr("d", "M0,-5L10,0L0,5").attr("fill", color);
+}});
 
 // Click background to clear selection
 svg.on("click", function(event) {{
@@ -1261,7 +1260,7 @@ function showDetails(d) {{
     }}
 
     if (incoming.length) {{
-        html += '<h3 style="margin-top:12px;">Incoming (' + incoming.length + ')</h3>';
+        html += '<h3 style="margin-top:12px; color:#3498db;">Incoming (' + incoming.length + ')</h3>';
         incoming.forEach(l => {{
             const src = typeof l.source === "object" ? l.source : graphData.nodes.find(n => n.id === l.source);
             const srcId = src ? src.id : null;
@@ -1271,12 +1270,12 @@ function showDetails(d) {{
     }}
 
     if (outgoing.length) {{
-        html += '<h3 style="margin-top:12px;">Outgoing (' + outgoing.length + ')</h3>';
+        html += '<h3 style="margin-top:12px; color:#2ecc71;">Outgoing (' + outgoing.length + ')</h3>';
         outgoing.forEach(l => {{
             const tgt = typeof l.target === "object" ? l.target : graphData.nodes.find(n => n.id === l.target);
             const tgtId = tgt ? tgt.id : null;
             html += '<div class="detail-row rel-link" style="padding:2px 0; cursor:pointer;" data-node="' + (tgtId || '') + '">' +
-                '<span class="detail-value" style="font-size:12px;"><span style="color:#888;">' + esc(l.label || '') + '</span> &rarr; <strong style="color:#3498db;">' + esc(tgt ? tgt.name : "?") + '</strong></span></div>';
+                '<span class="detail-value" style="font-size:12px;"><span style="color:#888;">' + esc(l.label || '') + '</span> &rarr; <strong style="color:#2ecc71;">' + esc(tgt ? tgt.name : "?") + '</strong></span></div>';
         }});
     }}
 
@@ -1316,6 +1315,13 @@ function highlightConnections(d) {{
     label.transition().duration(200)
         .attr("opacity", n => connIds.has(n.id) ? 1 : 0.12);
     link.transition().duration(200)
+        .attr("stroke", l => {{
+            const sid = typeof l.source === "object" ? l.source.id : l.source;
+            const tid = typeof l.target === "object" ? l.target.id : l.target;
+            if (sid === d.id) return "#2ecc71";  // outgoing = green
+            if (tid === d.id) return "#3498db";  // incoming = blue
+            return "#666";
+        }})
         .attr("stroke-opacity", l => {{
             const sid = typeof l.source === "object" ? l.source.id : l.source;
             const tid = typeof l.target === "object" ? l.target.id : l.target;
@@ -1325,20 +1331,34 @@ function highlightConnections(d) {{
             const sid = typeof l.source === "object" ? l.source.id : l.source;
             const tid = typeof l.target === "object" ? l.target.id : l.target;
             return (sid === d.id || tid === d.id) ? 2.5 : 1.5;
+        }})
+        .attr("marker-end", l => {{
+            const sid = typeof l.source === "object" ? l.source.id : l.source;
+            const tid = typeof l.target === "object" ? l.target.id : l.target;
+            if (sid === d.id) return "url(#arrow-out)";
+            if (tid === d.id) return "url(#arrow-in)";
+            return "url(#arrowhead)";
         }});
     linkLabel.transition().duration(200)
         .attr("opacity", l => {{
             const sid = typeof l.source === "object" ? l.source.id : l.source;
             const tid = typeof l.target === "object" ? l.target.id : l.target;
             return (sid === d.id || tid === d.id) ? 1 : 0.04;
+        }})
+        .attr("fill", l => {{
+            const sid = typeof l.source === "object" ? l.source.id : l.source;
+            const tid = typeof l.target === "object" ? l.target.id : l.target;
+            if (sid === d.id) return "#2ecc71";
+            if (tid === d.id) return "#3498db";
+            return "#888";
         }});
 }}
 
 function clearHighlight() {{
     node.transition().duration(200).attr("opacity", 1);
     label.transition().duration(200).attr("opacity", 1);
-    link.transition().duration(200).attr("stroke-opacity", 0.5).attr("stroke-width", 1.5);
-    linkLabel.transition().duration(200).attr("opacity", 1);
+    link.transition().duration(200).attr("stroke", "#666").attr("stroke-opacity", 0.5).attr("stroke-width", 1.5).attr("marker-end", "url(#arrowhead)");
+    linkLabel.transition().duration(200).attr("opacity", 1).attr("fill", "#888");
 }}
 </script>
 </body>
