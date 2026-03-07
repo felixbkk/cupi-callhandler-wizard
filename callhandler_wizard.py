@@ -17,7 +17,7 @@ import subprocess
 import sys
 from collections import deque
 from datetime import datetime
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 import ssl
 
@@ -394,9 +394,10 @@ def greeting_audio_url(host, handler_id, greeting_type, language_code="1033"):
     """Build the CUPI URL for a greeting's audio stream (WAV).
     This is the direct API path — requires authentication to access.
     """
+    gt = quote(greeting_type, safe="")
     return (
         f"{host}/vmrest/handlers/callhandlers/{handler_id}"
-        f"/greetings/{greeting_type}/greetingstreamfiles/{language_code}/audio"
+        f"/greetings/{gt}/greetingstreamfiles/{language_code}/audio"
     )
 
 
@@ -662,16 +663,15 @@ def build_graph(call_handlers, interview_handlers, routing_rules, session, host,
                 })
                 has_transfer_target.add(oid)
 
-        # Greetings (after-greeting actions + audio URLs)
+        # Greetings (audio URLs + after-greeting routing)
         greetings = fetch_greetings(session, host, oid, name)
         for gr in greetings:
-            # Skip disabled greetings — they never activate
-            if str(gr.get("Enabled", "true")).lower() != "true":
-                continue
             greeting_name = gr.get("GreetingType", "Greeting")
             language_code = str(gr.get("LanguageCode", "1033"))
             play_what = str(gr.get("PlayWhat", ""))  # 0=nothing, 1=default/uploaded, 2=custom recording
             gr_schedule = GREETING_SCHEDULE.get(greeting_name, "always")
+            enabled = str(gr.get("Enabled", "true")).lower() == "true"
+            # Audio: include any greeting with a recording (PlayWhat 1 or 2)
             if play_what in ("1", "2"):
                 audio_url = greeting_audio_url(host, oid, greeting_name, language_code)
                 nodes[oid]["audio"].append({
@@ -679,6 +679,9 @@ def build_graph(call_handlers, interview_handlers, routing_rules, session, host,
                     "url": audio_url,
                     "schedule": gr_schedule,
                 })
+            # Routing: only follow after-greeting actions for enabled greetings
+            if not enabled:
+                continue
             action = str(gr.get("AfterGreetingAction", "0"))
             target = gr.get("AfterGreetingTargetHandlerObjectId", "")
             if action == ACTION_GOTO and target:
