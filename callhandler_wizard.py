@@ -780,7 +780,14 @@ const node = g.append("g")
         .on("start", dragstarted)
         .on("drag", dragged)
         .on("end", dragended))
-    .on("click", (event, d) => showDetails(d));
+    .on("click", (event, d) => showDetails(d))
+    .on("dblclick", (event, d) => {{
+        d.fx = null;
+        d.fy = null;
+        simulation.alphaTarget(0.3).restart();
+        setTimeout(() => simulation.alphaTarget(0), 300);
+        updatePinIndicators();
+    }});
 
 const label = g.append("g")
     .selectAll("text")
@@ -821,8 +828,15 @@ function dragged(event) {{
 
 function dragended(event) {{
     if (!event.active) simulation.alphaTarget(0);
-    event.subject.fx = null;
-    event.subject.fy = null;
+    // Pin node where it was dropped
+    event.subject.fx = event.x;
+    event.subject.fy = event.y;
+    updatePinIndicators();
+}}
+
+function updatePinIndicators() {{
+    node.attr("stroke", d => d.fx != null ? "#e94560" : "#fff")
+        .attr("stroke-width", d => d.fx != null ? 2.5 : 1.5);
 }}
 
 const classLabels = {{
