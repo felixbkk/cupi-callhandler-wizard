@@ -183,6 +183,68 @@ def fetch_routing_rules(session, host):
     return all_rules
 
 
+def fetch_routing_rule_conditions(session, host, rule_id, rule_name):
+    """Fetch conditions for a routing rule (called/calling number patterns, etc.)."""
+    path = f"/vmrest/routingrules/{rule_id}/routingruleconditions"
+    try:
+        data = api_get(session, host, path)
+        conditions = data.get("RoutingRuleCondition", [])
+        if isinstance(conditions, dict):
+            conditions = [conditions]
+        return conditions
+    except requests.exceptions.HTTPError:
+        return []
+
+
+# Condition parameter types from CUPI docs
+_CONDITION_PARAMS = {
+    "1": "Calling Number",
+    "2": "Called Number",
+    "3": "Forwarded From",
+    "5": "Port",
+    "7": "Schedule Set",
+    "9": "Phone System",
+}
+
+_CONDITION_OPS = {
+    "1": "In",
+    "2": "Equals",
+    "3": "Greater Than",
+    "4": "Less Than",
+}
+
+
+def fetch_schedule_sets(session, host):
+    """Fetch schedule sets and their member schedules."""
+    print("Fetching schedule sets...")
+    path = "/vmrest/schedulesets"
+    all_sets = []
+    page = 0
+    while True:
+        params = {"rowsPerPage": ROWS_PER_PAGE, "pageNumber": page}
+        data = api_get(session, host, path, params)
+        total = int(data.get("@total", 0))
+        if total == 0:
+            break
+        sets = data.get("ScheduleSet", [])
+        if isinstance(sets, dict):
+            sets = [sets]
+        all_sets.extend(sets)
+        print(f"  Fetched {len(all_sets)}/{total} schedule sets")
+        if len(all_sets) >= total:
+            break
+        page += 1
+
+    # Filter out subscriber-owned sets (same as schedules)
+    before = len(all_sets)
+    all_sets = [s for s in all_sets if not s.get("OwnerSubscriberObjectId")]
+    skipped = before - len(all_sets)
+    if skipped:
+        print(f"  Filtered out {skipped} user schedule sets ({before} -> {len(all_sets)})")
+
+    return all_sets
+
+
 # Track endpoints that have 404'd so we don't spam warnings for every handler
 _disabled_endpoints = set()
 
@@ -343,7 +405,8 @@ def greeting_audio_url(host, handler_id, greeting_type, language_code="1033"):
     )
 
 
-def build_graph(call_handlers, interview_handlers, routing_rules, session, host):
+def build_graph(call_handlers, interview_handlers, routing_rules, session, host,
+                schedule_set_map=None):
     nodes = {}
     edges = []
     handler_map = {}  # ObjectId → handler info
@@ -354,6 +417,10 @@ def build_graph(call_handlers, interview_handlers, routing_rules, session, host)
         name = ch.get("DisplayName", "Unknown")
         ext = ch.get("DtmfAccessId", "")
         handler_map[oid] = ch
+        sched_set_id = ch.get("ScheduleSetObjectId", "")
+        sched_name = ""
+        if schedule_set_map and sched_set_id in schedule_set_map:
+            sched_name = schedule_set_map[sched_set_id]
         nodes[oid] = {
             "id": oid,
             "name": name,
@@ -361,6 +428,7 @@ def build_graph(call_handlers, interview_handlers, routing_rules, session, host)
             "type": "callhandler",
             "classification": "normal",
             "audio": [],
+            "scheduleName": sched_name,
         }
 
     # Add interview handler nodes
@@ -379,10 +447,23 @@ def build_graph(call_handlers, interview_handlers, routing_rules, session, host)
     routing_targets = set()
 
     # Add routing rule nodes and edges
-    for rule in routing_rules:
+    total_rules = len(routing_rules)
+    for i, rule in enumerate(routing_rules):
         rule_oid = rule.get("ObjectId", "")
         rule_name = rule.get("DisplayName", rule.get("RuleName", "Routing Rule"))
         target_oid = rule.get("RouteTargetHandlerObjectId", "")
+        rule_state = str(rule.get("State", "0"))
+
+        # Fetch conditions for this rule
+        conditions = fetch_routing_rule_conditions(session, host, rule_oid, rule_name)
+        cond_list = []
+        for c in conditions:
+            param = _CONDITION_PARAMS.get(str(c.get("Parameter", "")), "Unknown")
+            op = _CONDITION_OPS.get(str(c.get("Operator", "")), "?")
+            value = c.get("OperandValue", "")
+            cond_list.append({"param": param, "op": op, "value": value})
+        if (i + 1) % 5 == 0 or i == 0 or i == total_rules - 1:
+            print(f"  Fetching rule conditions {i + 1}/{total_rules}: {rule_name}")
 
         nodes[rule_oid] = {
             "id": rule_oid,
@@ -390,6 +471,8 @@ def build_graph(call_handlers, interview_handlers, routing_rules, session, host)
             "extension": "",
             "type": "routingrule",
             "classification": "root",
+            "conditions": cond_list,
+            "ruleState": "Active" if rule_state == "0" else "Inactive" if rule_state == "1" else "Invalid",
         }
 
         if target_oid and target_oid in nodes:
@@ -1156,7 +1239,7 @@ tr:hover {{ background: #16213e; }}
 </div>
 <table id="handlerTable">
 <thead>
-<tr><th>Name</th><th>Extension</th><th>Type</th><th>Classification</th><th>Incoming</th><th>Outgoing</th><th>Audio</th><th>Object ID</th></tr>
+<tr><th>Name</th><th>Extension</th><th>Type</th><th>Classification</th><th>Schedule / Conditions</th><th>Incoming</th><th>Outgoing</th><th>Audio</th><th>Object ID</th></tr>
 </thead>
 <tbody></tbody>
 </table>
@@ -1273,12 +1356,27 @@ function renderTable() {{
             ? audioList.map(a => '<a href="' + esc(a.url) + '" target="_blank" class="audio-link">' + esc(a.greeting) + '</a>').join("<br>")
             : '<span class="muted">&mdash;</span>';
 
+        // Schedule name for handlers, conditions for routing rules
+        let schedCondHtml = '<span class="muted">&mdash;</span>';
+        if (n.type === "routingrule") {{
+            const conds = n.conditions || [];
+            const stateTag = n.ruleState !== "Active" ? ' <span class="muted">(' + esc(n.ruleState) + ')</span>' : "";
+            if (conds.length) {{
+                schedCondHtml = conds.map(c => esc(c.param) + " " + esc(c.op) + " " + esc(c.value)).join("<br>") + stateTag;
+            }} else {{
+                schedCondHtml = '<span class="muted">No conditions (matches all)</span>' + stateTag;
+            }}
+        }} else if (n.scheduleName) {{
+            schedCondHtml = esc(n.scheduleName);
+        }}
+
         const tr = document.createElement("tr");
         tr.innerHTML =
             '<td style="color:' + color + '; font-weight:600">' + esc(n.name) + '</td>' +
             '<td>' + esc(n.extension) + '</td>' +
             '<td>' + esc(n.type) + '</td>' +
             '<td style="color:' + color + '">' + esc(clsLabel) + '</td>' +
+            '<td>' + schedCondHtml + '</td>' +
             '<td>' + inHtml + '</td>' +
             '<td>' + outHtml + '</td>' +
             '<td>' + audioHtml + '</td>' +
@@ -1339,7 +1437,12 @@ function renderCallFlowTrees(activeEdges) {{
         }}
 
         let lines = [];
-        lines.push('<span class="flow-root">' + esc(root.name) + '</span> -> <span class="flow-handler">' + esc(targetNode.name) + (targetNode.extension ? " (" + esc(targetNode.extension) + ")" : "") + '</span>');
+        // Show conditions on the root line
+        const conds = root.conditions || [];
+        const condStr = conds.length
+            ? ' <span class="flow-muted">[' + conds.map(c => esc(c.param) + " " + esc(c.op) + " " + esc(c.value)).join(", ") + ']</span>'
+            : "";
+        lines.push('<span class="flow-root">' + esc(root.name) + '</span>' + condStr + ' -> <span class="flow-handler">' + esc(targetNode.name) + (targetNode.extension ? " (" + esc(targetNode.extension) + ")" : "") + '</span>' + (targetNode.scheduleName ? ' <span class="flow-muted">[' + esc(targetNode.scheduleName) + ']</span>' : ""));
         lines.push(...audioLinks(targetNode, 1));
 
         // BFS tree with depth tracking
@@ -1651,14 +1754,25 @@ def cmd_generate(args):
         print(f"  Warning: Could not fetch schedules: {e}")
         schedules = []
 
+    try:
+        schedule_sets = fetch_schedule_sets(session, host)
+    except (requests.exceptions.HTTPError, requests.exceptions.ConnectionError) as e:
+        print(f"  Warning: Could not fetch schedule sets: {e}")
+        schedule_sets = []
+
+    # Build schedule set OID -> display name lookup
+    schedule_set_map = {s["ObjectId"]: s.get("DisplayName", "") for s in schedule_sets}
+
     print(f"\nFound {len(call_handlers)} call handlers, "
           f"{len(interview_handlers)} interview handlers, "
           f"{len(routing_rules)} routing rules, "
           f"{len(holiday_schedules)} holiday schedules, "
-          f"{len(schedules)} schedules")
+          f"{len(schedules)} schedules, "
+          f"{len(schedule_sets)} schedule sets")
 
-    print("\nBuilding graph (fetching menu entries, transfer rules, greetings)...")
-    nodes, edges = build_graph(call_handlers, interview_handlers, routing_rules, session, host)
+    print("\nBuilding graph (fetching menu entries, transfer rules, greetings, rule conditions)...")
+    nodes, edges = build_graph(call_handlers, interview_handlers, routing_rules, session, host,
+                               schedule_set_map=schedule_set_map)
 
     # Summary
     classifications = {}
