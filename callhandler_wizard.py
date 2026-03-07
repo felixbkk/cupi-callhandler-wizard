@@ -1330,8 +1330,17 @@ function renderCallFlowTrees(activeEdges) {{
         const targetNode = nodeMap[target.target];
         if (!targetNode) return;
 
+        function audioLinks(node, indent) {{
+            if (!node || !node.audio) return [];
+            const audios = node.audio.filter(audioMatchesSchedule);
+            if (!audios.length) return [];
+            const prefix = "  ".repeat(indent);
+            return audios.map(a => prefix + '<a href="' + esc(a.url) + '" target="_blank" class="audio-link">&#9835; ' + esc(a.greeting) + ' greeting</a>');
+        }}
+
         let lines = [];
         lines.push('<span class="flow-root">' + esc(root.name) + '</span> -> <span class="flow-handler">' + esc(targetNode.name) + (targetNode.extension ? " (" + esc(targetNode.extension) + ")" : "") + '</span>');
+        lines.push(...audioLinks(targetNode, 1));
 
         // BFS tree with depth tracking
         const visited = new Set([root.id]);
@@ -1348,6 +1357,7 @@ function renderCallFlowTrees(activeEdges) {{
                 }}
                 visited.add(edge.target);
                 lines.push(prefix + '<span class="flow-label">[' + esc(edge.label) + ']</span> -> <span class="flow-handler">' + esc(name) + ext + '</span>');
+                lines.push(...audioLinks(tgt, indent + 1));
                 walk(edge.target, indent + 1);
             }});
         }}
