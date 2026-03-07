@@ -381,8 +381,9 @@ TRANSFER_SCHEDULE = {
     "Standard": "standard", "Off Hours": "offhours", "Alternate": "alternate",
 }
 GREETING_SCHEDULE = {
-    "Standard": "standard", "Off Hours": "offhours", "Holiday": "holiday",
-    "Alternate": "alternate", "Busy": "always", "Internal": "always", "Error": "always",
+    "Standard": "standard", "Off Hours": "offhours", "Closed": "offhours",
+    "Holiday": "holiday", "Alternate": "alternate",
+    "Busy": "always", "Internal": "always", "Error": "always",
 }
 
 
