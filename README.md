@@ -41,7 +41,7 @@ Output is written to `reports/<SiteName>_<timestamp>/` containing:
 | `callflow_trees.html` | Text-based BFS call flow trees with schedule filtering |
 | `schedules.html` | Business hour and holiday schedule details |
 | `test_times.html` | Recommended test times for each day of the week |
-| `audit.html` | Categorized audit findings: warnings, holidays, classification, audio |
+| `audit.html` | Categorized audit findings: warnings, holidays, classification, audio, extension dialing |
 | `audio/` | Downloaded greeting audio WAV files for inline playback |
 | `d3.v7.min.js` | Local D3 copy for offline use |
 | `audit.log` | Text summary of all audit findings |
@@ -167,7 +167,13 @@ Warnings are shown in the console during generation, on call flow cards, and in 
 
 ## Extension Resolution
 
-Transfer targets that route to phone extensions are resolved to user/contact names via best-effort lookup against `/vmrest/users` and `/vmrest/contacts`. Resolved names display as "John Smith (x1234)" instead of "Ext 1234".
+Transfer targets that route to phone extensions can be resolved to user/contact names via best-effort lookup against `/vmrest/users` and `/vmrest/contacts`. This is **opt-in** via the `--resolve-extensions` flag (adds ~12s for the user/contact fetch):
+
+```bash
+python callhandler_wizard.py --host https://... --user admin --resolve-extensions
+```
+
+Resolved names display as "John Smith (x1234)" instead of "Ext 1234". This applies to transfer rule targets and alternate contact numbers.
 
 ## Node Classifications
 
