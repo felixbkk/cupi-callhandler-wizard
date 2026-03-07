@@ -17,6 +17,7 @@ import re
 import subprocess
 import sys
 from collections import deque
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from urllib.parse import quote, urlparse
 
@@ -527,57 +528,93 @@ def _detect_wav_codec(filepath):
     return None, "Unknown"
 
 
+def _download_one_audio(session, remote_url, local_path, max_retries=2):
+    """Download a single audio file with retry. Returns (success, file_size)."""
+    for attempt in range(max_retries + 1):
+        try:
+            resp = session.get(remote_url, verify=False, timeout=API_TIMEOUT, stream=True)
+            if resp.status_code == 200:
+                with open(local_path, "wb") as f:
+                    for chunk in resp.iter_content(8192):
+                        f.write(chunk)
+                return True, os.path.getsize(local_path)
+            elif resp.status_code in (500, 502, 503) and attempt < max_retries:
+                time.sleep(1)
+                continue
+            else:
+                return False, 0
+        except (requests.exceptions.Timeout, requests.exceptions.ConnectionError):
+            if attempt < max_retries:
+                time.sleep(1)
+                continue
+            return False, 0
+        except Exception:
+            return False, 0
+    return False, 0
+
+
 def download_audio_files(session, nodes, site_dir):
     """Download all greeting audio WAV files into site_dir/audio/.
 
     Rewrites each node's audio[].url to the local relative path.
     Files are named: HandlerName - GreetingType.wav
+    Uses threaded downloads with retry for failed requests.
     """
     audio_dir = os.path.join(site_dir, "audio")
     os.makedirs(audio_dir, exist_ok=True)
-    total = sum(len(n.get("audio", [])) for n in nodes)
-    if not total:
-        return
-    downloaded = 0
-    failed = 0
-    codec_counts = {}
+
+    # Build download list
+    download_list = []
     for node in nodes:
         handler_name = re.sub(r'[^\w\s\-]', '', node.get("name", "unknown")).strip()
         for a in node.get("audio", []):
             remote_url = a["url"]
             greeting = a.get("greeting", "greeting")
             filename = f"{handler_name} - {greeting}.wav"
-            # Sanitize for filesystem
             filename = re.sub(r'[<>:"/\\|?*]', '_', filename)
             local_path = os.path.join(audio_dir, filename)
-            try:
-                resp = session.get(remote_url, verify=False, timeout=API_TIMEOUT, stream=True)
-                if resp.status_code == 200:
-                    with open(local_path, "wb") as f:
-                        for chunk in resp.iter_content(8192):
-                            f.write(chunk)
-                    file_size = os.path.getsize(local_path)
-                    if file_size > 100:  # More than just a WAV header
-                        a["url"] = f"audio/{filename}"
-                        fmt_tag, codec_name = _detect_wav_codec(local_path)
-                        a["codec"] = codec_name
-                        codec_counts[codec_name] = codec_counts.get(codec_name, 0) + 1
-                        if fmt_tag and fmt_tag not in (1, 6, 7):
-                            a["codecWarning"] = True
-                    else:
-                        a["noAudio"] = True
-                        os.remove(local_path)
-                    downloaded += 1
-                else:
-                    a["noAudio"] = True
-                    failed += 1
-            except Exception:
+            download_list.append((a, remote_url, local_path, filename))
+
+    total = len(download_list)
+    if not total:
+        return
+    counts = {"downloaded": 0, "failed": 0}
+    codec_counts = {}
+
+    def _do_download(item):
+        a, remote_url, local_path, filename = item
+        success, file_size = _download_one_audio(session, remote_url, local_path)
+        return a, local_path, filename, success, file_size
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        futures = [pool.submit(_do_download, item) for item in download_list]
+        for future in as_completed(futures):
+            a, local_path, filename, success, file_size = future.result()
+            if success and file_size > 100:
+                a["url"] = f"audio/{filename}"
+                fmt_tag, codec_name = _detect_wav_codec(local_path)
+                a["codec"] = codec_name
+                codec_counts[codec_name] = codec_counts.get(codec_name, 0) + 1
+                if fmt_tag and fmt_tag not in (1, 6, 7):
+                    a["codecWarning"] = True
+                counts["downloaded"] += 1
+            elif success and file_size <= 100:
                 a["noAudio"] = True
-                failed += 1
-            print(f"  Audio: {downloaded + failed}/{total} {'downloaded' if not failed else f'({failed} failed)'}", end="\r")
-    result = f"  Audio: {downloaded} downloaded"
-    if failed:
-        result += f", {failed} failed"
+                try:
+                    os.remove(local_path)
+                except OSError:
+                    pass
+                counts["downloaded"] += 1
+            else:
+                a["noAudio"] = True
+                counts["failed"] += 1
+            done = counts["downloaded"] + counts["failed"]
+            fail_msg = f"({counts['failed']} failed)" if counts["failed"] else "downloaded"
+            print(f"  Audio: {done}/{total} {fail_msg}", end="\r")
+
+    result = f"  Audio: {counts['downloaded']} downloaded"
+    if counts["failed"]:
+        result += f", {counts['failed']} failed"
     print(f"{result}{' ' * 20}")
     if codec_counts:
         print(f"  Codecs: {', '.join(f'{name} ({count})' for name, count in sorted(codec_counts.items()))}")
@@ -743,6 +780,7 @@ def build_graph(call_handlers, interview_handlers, routing_rules, session, host,
 
     # Add routing rule nodes and edges
     total_rules = len(routing_rules)
+    t_cond_start = time.perf_counter()
     for i, rule in enumerate(routing_rules):
         rule_oid = rule.get("ObjectId", "")
         rule_name = rule.get("DisplayName", rule.get("RuleName", "Routing Rule"))
@@ -794,19 +832,53 @@ def build_graph(call_handlers, interview_handlers, routing_rules, session, host,
                 "label": rule_name, "schedule": "always",
             })
 
+    t_cond_elapsed = time.perf_counter() - t_cond_start
+    print(f"  Rule conditions: {t_cond_elapsed:.1f}s ({total_rules} rules)")
+
     # Track transfer target extensions for dead-end detection
     has_transfer_target = set()
 
-    # Fetch menu entries, transfer rules, and greetings for each call handler
+    # Parallel fetch: menu entries, transfer rules, greetings for all handlers
     total = len(call_handlers)
-    for i, ch in enumerate(call_handlers):
+    print(f"  Fetching sub-resources for {total} handlers (threaded)...")
+    t_fetch_start = time.perf_counter()
+    t_menu_total = 0.0
+    t_xfer_total = 0.0
+    t_greet_total = 0.0
+
+    def _fetch_handler_trio(ch):
+        """Fetch menu entries, transfer rules, and greetings in parallel."""
         oid = ch.get("ObjectId", "")
         name = ch.get("DisplayName", "Unknown")
-        if (i + 1) % 10 == 0 or i == 0 or i == total - 1:
-            print(f"Fetching details for handler {i + 1}/{total}: {name}")
+        t1 = time.perf_counter()
+        menu = fetch_menu_entries(session, host, oid, name)
+        t_menu = time.perf_counter() - t1
+        t1 = time.perf_counter()
+        xfer = fetch_transfer_rules(session, host, oid, name)
+        t_xfer = time.perf_counter() - t1
+        t1 = time.perf_counter()
+        greet = fetch_greetings(session, host, oid, name)
+        t_greet = time.perf_counter() - t1
+        return oid, name, ch, menu, xfer, greet, t_menu, t_xfer, t_greet
+
+    # Use thread pool — CUC servers handle ~8 concurrent connections well
+    handler_results = []
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        futures = {pool.submit(_fetch_handler_trio, ch): ch for ch in call_handlers}
+        done_count = 0
+        for future in as_completed(futures):
+            done_count += 1
+            if done_count % 10 == 0 or done_count == 1 or done_count == total:
+                print(f"  Handler details: {done_count}/{total}")
+            handler_results.append(future.result())
+
+    # Process results (single-threaded, modifies shared nodes/edges)
+    for oid, name, ch, menu_entries, transfer_rules, greetings, t_m, t_x, t_g in handler_results:
+        t_menu_total += t_m
+        t_xfer_total += t_x
+        t_greet_total += t_g
 
         # Menu entries
-        menu_entries = fetch_menu_entries(session, host, oid, name)
         has_timeout_key = False
         unlocked_keys = []
         for entry in menu_entries:
@@ -842,7 +914,6 @@ def build_graph(call_handlers, interview_handlers, routing_rules, session, host,
                 nodes[oid]["digitTimeoutMs"] = str(one_key_delay)
 
         # Transfer rules
-        transfer_rules = fetch_transfer_rules(session, host, oid, name)
         for tr in transfer_rules:
             rule_name_t = tr.get("RuleIndex", tr.get("TransferRuleDisplayName", "Transfer"))
             extension = tr.get("Extension", "")
@@ -898,7 +969,6 @@ def build_graph(call_handlers, interview_handlers, routing_rules, session, host,
 
         # Greetings (audio URLs + after-greeting routing)
         has_ignore_digits = False
-        greetings = fetch_greetings(session, host, oid, name)
         for gr in greetings:
             greeting_name = gr.get("GreetingType", "Greeting")
             language_code = str(gr.get("LanguageCode", "1033"))
@@ -944,6 +1014,10 @@ def build_graph(call_handlers, interview_handlers, routing_rules, session, host,
         # Warn if caller input is disabled but handler has active menu keys
         if has_ignore_digits and active_keys:
             nodes[oid]["warnings"].append("Caller input disabled during greeting — DTMF keys ignored until greeting finishes")
+
+    t_fetch_wall = time.perf_counter() - t_fetch_start
+    print(f"  Sub-resource fetch: {t_fetch_wall:.1f}s wall, "
+          f"menu {t_menu_total:.1f}s + xfer {t_xfer_total:.1f}s + greet {t_greet_total:.1f}s cumulative")
 
     # Sort audio entries: Standard first, then Off Hours, Holiday, Alternate, rest
     _AUDIO_ORDER = {"Standard": 0, "Off Hours": 1, "Holiday": 2, "Alternate": 3}
