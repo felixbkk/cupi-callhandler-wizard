@@ -754,6 +754,13 @@ def build_graph(call_handlers, interview_handlers, routing_rules, session, host,
         else:
             node["classification"] = "normal"
 
+    # Identify primary root: the root call handler with the most incoming edges
+    root_handlers = [(nid, node) for nid, node in nodes.items()
+                     if node["classification"] == "root" and node["type"] == "callhandler"]
+    if root_handlers:
+        primary_id = max(root_handlers, key=lambda x: len(incoming[x[0]]))[0]
+        nodes[primary_id]["primary"] = True
+
     return list(nodes.values()), edges
 
 
@@ -842,6 +849,7 @@ marker {{ fill: #666; }}
 </div>
 <div class="legend">
 <h3>Legend</h3>
+<div class="legend-item"><span class="legend-dot" style="background:#ffd700"></span> Primary Root</div>
 <div class="legend-item"><span class="legend-dot" style="background:#2ecc71"></span> Root (entry point)</div>
 <div class="legend-item"><span class="legend-dot" style="background:#3498db"></span> Normal</div>
 <div class="legend-item"><span class="legend-dot" style="background:#95a5a6"></span> True Orphan (isolated)</div>
@@ -877,11 +885,13 @@ const typeColorOverride = {{
 }};
 
 function nodeColor(d) {{
+    if (d.primary) return "#ffd700";
     if (typeColorOverride[d.type]) return typeColorOverride[d.type];
     return colorMap[d.classification] || colorMap.normal;
 }}
 
 function nodeRadius(d) {{
+    if (d.primary) return 14;
     if (d.type === "routingrule") return 10;
     if (d.type === "phone" || d.type === "action") return 6;
     return 8;
@@ -1377,6 +1387,7 @@ const nodeMap = {{}};
 data.nodes.forEach(n => nodeMap[n.id] = n);
 
 function nodeColor(n) {{
+    if (n.primary) return "#ffd700";
     return typeColors[n.type] || classColors[n.classification] || "#3498db";
 }}
 
@@ -1431,7 +1442,7 @@ function renderTable() {{
 
     sorted.forEach(n => {{
         const color = nodeColor(n);
-        const clsLabel = classLabels[n.classification] || n.classification;
+        const clsLabel = n.primary ? "Primary Root" : (classLabels[n.classification] || n.classification);
 
         // Text filter
         const text = (n.name + " " + n.extension + " " + n.type + " " + clsLabel).toLowerCase();
@@ -1513,6 +1524,15 @@ function renderCallFlowTrees(activeEdges) {{
 
     // Find routing rules that connect to call handlers
     const roots = data.nodes.filter(n => n.type === "routingrule" && (adj[n.id] || []).length > 0);
+    // Sort: routing rules targeting the primary root come first
+    const primaryId = (data.nodes.find(n => n.primary) || {{}}).id;
+    roots.sort((a, b) => {{
+        const aTarget = (adj[a.id] || [])[0];
+        const bTarget = (adj[b.id] || [])[0];
+        const aHitsPrimary = aTarget && aTarget.target === primaryId ? 0 : 1;
+        const bHitsPrimary = bTarget && bTarget.target === primaryId ? 0 : 1;
+        return aHitsPrimary - bHitsPrimary;
+    }});
     if (!roots.length) {{
         container.innerHTML = '<p class="muted">No routing rules with connections found.</p>';
         return;
