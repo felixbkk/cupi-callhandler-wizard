@@ -342,6 +342,41 @@ def fetch_schedules(session, host):
     return all_schedules
 
 
+def fetch_users(session, host):
+    """Fetch all users (best-effort, for extension resolution)."""
+    print("Fetching users...")
+    return paginated_fetch(session, host,
+        "/vmrest/users", "User", "users")
+
+
+def fetch_contacts(session, host):
+    """Fetch all contacts (best-effort, for extension resolution)."""
+    print("Fetching contacts...")
+    return paginated_fetch(session, host,
+        "/vmrest/contacts", "Contact", "contacts")
+
+
+def build_extension_map(users, contacts, call_handlers):
+    """Build extension -> display name lookup from users, contacts, and handlers."""
+    ext_map = {}
+    for u in users:
+        ext = u.get("DtmfAccessId", "")
+        name = u.get("DisplayName", "") or u.get("Alias", "")
+        if ext and name:
+            ext_map[ext] = name
+    for c in contacts:
+        ext = c.get("DtmfAccessId", "")
+        name = c.get("DisplayName", "")
+        if ext and name and ext not in ext_map:
+            ext_map[ext] = name
+    for ch in call_handlers:
+        ext = ch.get("DtmfAccessId", "")
+        name = ch.get("DisplayName", "")
+        if ext and name and ext not in ext_map:
+            ext_map[ext] = name
+    return ext_map
+
+
 # -- Action type constants from CUPI --
 ACTION_IGNORE = "0"
 ACTION_HANGUP = "1"
@@ -520,9 +555,10 @@ def _add_route_edge(nodes, edges, source_id, action, target_id, conversation,
 
 
 def build_graph(call_handlers, interview_handlers, routing_rules, session, host,
-                schedule_set_map=None, directory_handlers=None):
+                schedule_set_map=None, directory_handlers=None, extension_map=None):
     nodes = {}
     edges = []
+    ext_map = extension_map or {}
     dir_handler_map = {}  # ObjectId → DisplayName for directory handlers
     for dh in (directory_handlers or []):
         dir_handler_map[dh.get("ObjectId", "")] = dh.get("DisplayName", "Unknown")
@@ -537,6 +573,9 @@ def build_graph(call_handlers, interview_handlers, routing_rules, session, host,
         if schedule_set_map and sched_set_id in schedule_set_map:
             sched_name = schedule_set_map[sched_set_id]
         post_greeting = str(ch.get("PlayPostGreetingRecording", "0"))
+        node_warnings = []
+        if post_greeting != "0":
+            node_warnings.append("'Record your message' prompt is enabled")
         nodes[oid] = {
             "id": oid,
             "name": name,
@@ -547,6 +586,7 @@ def build_graph(call_handlers, interview_handlers, routing_rules, session, host,
             "scheduleName": sched_name,
             "system": str(ch.get("Undeletable", "false")).lower() == "true",
             "postGreeting": post_greeting != "0",
+            "warnings": node_warnings,
         }
 
     # Add interview handler nodes and after-message routing
@@ -658,15 +698,26 @@ def build_graph(call_handlers, interview_handlers, routing_rules, session, host,
 
         # Menu entries
         menu_entries = fetch_menu_entries(session, host, oid, name)
+        has_timeout_key = False
         for entry in menu_entries:
             action = str(entry.get("Action", "0"))
+            key = entry.get("TouchtoneKey", "?")
+            if key == "*":
+                has_timeout_key = action != ACTION_IGNORE
             if action == ACTION_IGNORE:
                 continue
-            key = entry.get("TouchtoneKey", "?")
+            target_id = entry.get("TargetHandlerObjectId", "")
+            # Self-referencing loop: menu key routes back to same handler
+            if action == ACTION_GOTO and target_id == oid:
+                nodes[oid]["warnings"].append(f"Key {key} routes back to itself")
             _add_route_edge(nodes, edges, oid, action,
-                entry.get("TargetHandlerObjectId", ""),
+                target_id,
                 entry.get("TargetConversation", ""),
                 f"Key {key}", dir_handler_map=dir_handler_map)
+        # Check for missing timeout handler (no * key configured)
+        active_keys = [e for e in menu_entries if str(e.get("Action", "0")) != ACTION_IGNORE]
+        if active_keys and not has_timeout_key:
+            nodes[oid]["warnings"].append("No timeout key (*) configured — callers who press nothing have no path")
 
         # Transfer rules
         transfer_rules = fetch_transfer_rules(session, host, oid, name)
@@ -677,6 +728,10 @@ def build_graph(call_handlers, interview_handlers, routing_rules, session, host,
             target_handler = tr.get("TargetHandlerObjectId", "")
             tr_schedule = TRANSFER_SCHEDULE.get(str(rule_name_t), "standard")
 
+            # Warn if alternate transfer rule is enabled (overrides all others)
+            if str(rule_name_t) == "Alternate" and str(tr_enabled).lower() == "true":
+                nodes[oid]["warnings"].append("Alternate transfer rule is enabled (overrides Standard and Off Hours)")
+
             if target_handler and target_handler in nodes:
                 edges.append({
                     "source": oid,
@@ -686,12 +741,14 @@ def build_graph(call_handlers, interview_handlers, routing_rules, session, host,
                 })
                 has_transfer_target.add(oid)
             elif extension and str(tr_enabled).lower() == "true":
-                # Create a terminal phone node for the extension
+                # Resolve extension to a name via best-effort lookup
+                resolved_name = ext_map.get(extension, "")
+                display = f"{resolved_name} (x{extension})" if resolved_name else f"Ext {extension}"
                 phone_id = f"phone_{extension}"
                 if phone_id not in nodes:
                     nodes[phone_id] = {
                         "id": phone_id,
-                        "name": f"Ext {extension}",
+                        "name": display,
                         "extension": extension,
                         "type": "phone",
                         "classification": "normal",
@@ -721,11 +778,20 @@ def build_graph(call_handlers, interview_handlers, routing_rules, session, host,
                     "schedule": gr_schedule,
                     "enabled": enabled,
                 })
+            # Warn on alternate greeting enabled (overrides standard)
+            if greeting_name == "Alternate" and enabled:
+                nodes[oid]["warnings"].append("Alternate greeting is enabled (overrides Standard)")
             # Routing: only follow after-greeting actions for enabled greetings
             if not enabled:
                 continue
             action = str(gr.get("AfterGreetingAction", "0"))
             target = gr.get("AfterGreetingTargetHandlerObjectId", "")
+            # Warn on after-greeting = hangup
+            if action == ACTION_HANGUP:
+                nodes[oid]["warnings"].append(f"{greeting_name} greeting: after-greeting action is Hangup (caller gets disconnected)")
+            # Warn on after-greeting = take message (voicemail behavior on an AA)
+            if action == ACTION_TAKE_MSG:
+                nodes[oid]["warnings"].append(f"{greeting_name} greeting: after-greeting action is Take Message")
             if action == ACTION_GOTO and target:
                 _ensure_handler_node(nodes, target, dir_handler_map=dir_handler_map)
                 edges.append({
@@ -751,6 +817,25 @@ def build_graph(call_handlers, interview_handlers, routing_rules, session, host,
         if src in outgoing:
             outgoing[src].add(tgt)
         outgoing_by_schedule.setdefault(src, {}).setdefault(sched, set()).add(tgt)
+
+    # Detect tight circular routing (A→B→A or A→B→C→A with no exit)
+    for nid, targets in outgoing.items():
+        node = nodes.get(nid)
+        if not node or node.get("type") != "callhandler":
+            continue
+        for tgt in targets:
+            # 2-node loop: A→B and B→A
+            if tgt in outgoing and nid in outgoing.get(tgt, set()):
+                tgt_node = nodes.get(tgt, {})
+                if tgt_node.get("type") == "callhandler":
+                    # Only warn if one side has no other exits
+                    a_exits = outgoing.get(nid, set()) - {tgt}
+                    b_exits = outgoing.get(tgt, set()) - {nid}
+                    if not a_exits or not b_exits:
+                        if "warnings" in node:
+                            msg = f"Circular routing with {tgt_node.get('name', tgt)}"
+                            if msg not in node["warnings"]:
+                                node["warnings"].append(msg)
 
     # BFS reachability from all routing rule nodes
     def bfs_reachable(start_nodes, edge_filter=None):
@@ -962,6 +1047,7 @@ body.light-mode .card p {{ color: #666 !important; }}
 body.light-mode .flow-handler {{ color: #0969da !important; }}
 body.light-mode .flow-label {{ color: #bf8700 !important; }}
 body.light-mode .flow-visited {{ color: #888 !important; }}
+body.light-mode .warning-row {{ background: #fff3cd !important; color: #9a6700 !important; }}
 
 /* Section headers */
 body.light-mode .section-header {{ border-color: #d0d7de !important; }}
@@ -1478,6 +1564,13 @@ function showDetails(d) {{
 
     if (d.scheduleName) {{
         html += '<div class="detail-row"><span class="detail-label">Schedule</span><span class="detail-value">' + esc(d.scheduleName) + '</span></div>';
+    }}
+
+    if (d.warnings && d.warnings.length) {{
+        html += '<h3 style="margin-top:12px; color:#e74c3c;">Warnings</h3>';
+        d.warnings.forEach(w => {{
+            html += '<div class="detail-row" style="padding:2px 0; color:#e74c3c; font-size:12px;">&#9888; ' + esc(w) + '</div>';
+        }});
     }}
 
     if (d.audio && d.audio.length) {{
@@ -2152,6 +2245,11 @@ function debugOrphans() {{
             }}
         }}));
 
+    // Configuration warnings
+    report.warnings = data.nodes
+        .filter(n => n.warnings && n.warnings.length)
+        .map(n => ({{ name: n.name, extension: n.extension, id: n.id, warnings: n.warnings }}));
+
     // Per-schedule edge counts
     const scheduleCounts = {{}};
     data.edges.forEach(e => scheduleCounts[e.schedule] = (scheduleCounts[e.schedule] || 0) + 1);
@@ -2162,7 +2260,8 @@ function debugOrphans() {{
         trueOrphans: report.trueOrphans.length,
         unreachable: report.unreachable.length,
         deadEnds: report.deadEnds.length,
-        scheduleGaps: report.scheduleGaps.length
+        scheduleGaps: report.scheduleGaps.length,
+        warnings: report.warnings.length
     }};
 
     out.textContent = JSON.stringify(report, null, 2);
@@ -2467,6 +2566,16 @@ function createCard(node, isEntry) {{
                 schedTag(a.schedule) +
                 (a.enabled === false ? ' <span style="color:#e74c3c; font-size:10px;">(disabled)</span>' : '') +
                 '<br><audio controls preload="none" style="width:100%; height:28px; margin-top:2px;"><source src="' + esc(a.url) + '" type="audio/wav"></audio>';
+            card.appendChild(row);
+        }});
+    }}
+
+    // Warnings
+    if (node.warnings && node.warnings.length) {{
+        node.warnings.forEach(w => {{
+            const row = document.createElement("div");
+            row.style.cssText = "padding: 6px 16px; background: #2a1a1a; border-bottom: 1px solid #3a1a1a; color: #e74c3c; font-size: 12px;";
+            row.innerHTML = '&#9888; ' + esc(w);
             card.appendChild(row);
         }});
     }}
@@ -3281,18 +3390,35 @@ def cmd_generate(args):
         # Build schedule set OID -> display name lookup
         schedule_set_map = {s["ObjectId"]: s.get("DisplayName", "") for s in schedule_sets}
 
+        # Best-effort extension resolution: users and contacts
+        users = []
+        contacts = []
+        try:
+            users = fetch_users(session, host)
+        except (requests.exceptions.HTTPError, requests.exceptions.ConnectionError) as e:
+            print(f"  Warning: Could not fetch users: {e}")
+        try:
+            contacts = fetch_contacts(session, host)
+        except (requests.exceptions.HTTPError, requests.exceptions.ConnectionError) as e:
+            print(f"  Warning: Could not fetch contacts: {e}")
+        ext_map = build_extension_map(users, contacts, call_handlers)
+        if ext_map:
+            print(f"  Extension lookup: {len(ext_map)} extensions resolved")
+
         print(f"\nFound {len(call_handlers)} call handlers, "
               f"{len(interview_handlers)} interview handlers, "
               f"{len(directory_handlers)} directory handlers, "
               f"{len(routing_rules)} routing rules, "
               f"{len(holiday_schedules)} holiday schedules, "
               f"{len(schedules)} schedules, "
-              f"{len(schedule_sets)} schedule sets")
+              f"{len(schedule_sets)} schedule sets, "
+              f"{len(users)} users, {len(contacts)} contacts")
 
         print("\nBuilding graph (fetching menu entries, transfer rules, greetings, rule conditions)...")
         nodes, edges = build_graph(call_handlers, interview_handlers, routing_rules, session, host,
                                    schedule_set_map=schedule_set_map,
-                                   directory_handlers=directory_handlers)
+                                   directory_handlers=directory_handlers,
+                                   extension_map=ext_map)
 
         # Summary
         classifications = {}
@@ -3304,6 +3430,14 @@ def cmd_generate(args):
         print(f"\nGraph: {len(nodes)} nodes, {len(edges)} edges, {audio_count} audio greetings")
         for cls, count in sorted(classifications.items()):
             print(f"  {cls}: {count}")
+
+        # Print warnings summary
+        warned_nodes = [(n["name"], n["warnings"]) for n in nodes if n.get("warnings")]
+        if warned_nodes:
+            print(f"\nWarnings ({sum(len(w) for _, w in warned_nodes)} issues across {len(warned_nodes)} handlers):")
+            for name, warnings in warned_nodes:
+                for w in warnings:
+                    print(f"  {name}: {w}")
 
         if audio_count:
             print("\nDownloading greeting audio files...")
