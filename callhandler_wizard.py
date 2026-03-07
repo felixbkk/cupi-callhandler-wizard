@@ -827,6 +827,42 @@ def build_graph(call_handlers, interview_handlers, routing_rules, session, host,
     return list(nodes.values()), edges
 
 
+NAV_PAGES = [
+    ("index.html", "Home"),
+    ("callhandler_map.html", "Graph"),
+    ("callflow.html", "Call Flow"),
+    ("callhandler_report.html", "Handlers"),
+    ("schedules.html", "Schedules"),
+    ("test_times.html", "Test Times"),
+]
+
+
+def floating_nav_html(current_file):
+    """Generate a floating navigation pill (CSS + HTML) for use on any page.
+
+    current_file: the filename of the page being generated (e.g. 'callhandler_map.html')
+    """
+    links = []
+    for href, label in NAV_PAGES:
+        if href == current_file:
+            links.append(f'<span class="fnav-current">{label}</span>')
+        else:
+            links.append(f'<a href="{href}">{label}</a>')
+    links_html = "\n".join(links)
+    return f'''<style>
+.fnav {{ position: fixed; top: 12px; right: 12px; z-index: 9999; display: flex; gap: 2px; align-items: center;
+  background: #0d1b2a; border: 1px solid #0f3460; border-radius: 6px; padding: 6px 10px;
+  font-size: 12px; box-shadow: 0 2px 12px rgba(0,0,0,0.4); opacity: 0.45; transition: opacity 0.2s; }}
+.fnav:hover {{ opacity: 1; }}
+.fnav a {{ color: #1abc9c; text-decoration: none; padding: 3px 8px; border-radius: 4px; white-space: nowrap; }}
+.fnav a:hover {{ background: #16213e; color: #fff; }}
+.fnav-current {{ color: #e94560; font-weight: 700; padding: 3px 8px; white-space: nowrap; }}
+</style>
+<div class="fnav">
+{links_html}
+</div>'''
+
+
 D3_CDN_URL = "https://d3js.org/d3.v7.min.js"
 D3_FILENAME = "d3.v7.min.js"
 
@@ -895,11 +931,6 @@ marker {{ fill: #666; }}
 </div>
 <div id="sidebar">
 <h2>{title_prefix}Call Handler Map</h2>
-<div><a href="index.html" style="color:#1abc9c; font-size:13px;">Home</a> &nbsp;
-<a href="callflow.html" style="color:#1abc9c; font-size:13px;">Call Flow</a> &nbsp;
-<a href="callhandler_report.html" style="color:#1abc9c; font-size:13px;">Handlers &amp; Routing</a> &nbsp;
-<a href="schedules.html" style="color:#1abc9c; font-size:13px;">Schedules</a> &nbsp;
-<a href="test_times.html" style="color:#1abc9c; font-size:13px;">Test Times</a></div>
 <div class="controls">
 <h3>Layout</h3>
 <div style="display:flex; gap:6px; flex-wrap:wrap;">
@@ -1426,6 +1457,7 @@ function clearHighlight() {{
     linkLabel.transition().duration(200).attr("opacity", 1).attr("fill", "#888");
 }}
 </script>
+{floating_nav_html("callhandler_map.html")}
 </body>
 </html>'''
 
@@ -1543,11 +1575,6 @@ tr:hover {{ background: #16213e; }}
 </head>
 <body>
 <h1>{title_prefix}Handlers &amp; Routing</h1>
-<a href="index.html" style="color:#1abc9c; font-size:13px;">Home</a> &nbsp;
-<a href="callflow.html" style="color:#1abc9c; font-size:13px;">Call Flow</a> &nbsp;
-<a href="callhandler_map.html" style="color:#1abc9c; font-size:13px;">Graph View</a> &nbsp;
-<a href="schedules.html" style="color:#1abc9c; font-size:13px;">Schedules</a> &nbsp;
-<a href="test_times.html" style="color:#1abc9c; font-size:13px;">Test Times</a>
 <div id="stats" class="stats"></div>
 <div id="summary" class="summary"></div>
 
@@ -2031,6 +2058,7 @@ function copyDebugOutput() {{
 &bull; Find Problems &mdash; list dead ends, orphans, unreachable nodes, and edge counts per schedule
 &bull; Dump All Data &mdash; export the complete JSON dataset (nodes, edges, schedules, holidays)</pre>
 </div>
+{floating_nav_html("callhandler_report.html")}
 </body>
 </html>'''
 
@@ -2050,9 +2078,6 @@ def generate_callflow_html(nodes, edges, site_name="", host=""):
 body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #1a1a2e; color: #e0e0e0; }}
 .topbar {{ background: #0d1b2a; border-bottom: 1px solid #0f3460; padding: 16px 24px; display: flex; justify-content: space-between; align-items: center; }}
 .topbar h1 {{ color: #e94560; font-size: 20px; }}
-.topbar-links {{ display: flex; gap: 16px; }}
-.topbar-links a {{ color: #1abc9c; font-size: 13px; text-decoration: none; }}
-.topbar-links a:hover {{ text-decoration: underline; }}
 .controls {{ display: flex; gap: 24px; align-items: center; flex-wrap: wrap; padding: 12px 24px; background: #16213e; border-bottom: 1px solid #0f3460; }}
 .schedule-bar {{ display: flex; gap: 4px; align-items: center; }}
 .schedule-label {{ font-size: 13px; color: #888; margin-right: 8px; }}
@@ -2117,11 +2142,6 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans
 <body>
 <div class="topbar">
 <h1>{title_prefix}Call Flow Explorer</h1>
-<div class="topbar-links">
-<a href="callhandler_map.html">Graph View</a>
-<a href="callhandler_report.html">Handlers &amp; Routing</a>
-<a href="schedules.html">Schedules</a>
-</div>
 </div>
 <div class="controls">
 <div class="schedule-bar">
@@ -2514,6 +2534,7 @@ if (!loadFromHash()) {{
     renderFlow();
 }}
 </script>
+{floating_nav_html("callflow.html")}
 </body>
 </html>'''
 
@@ -2570,11 +2591,6 @@ tr:hover {{ background: #16213e; }}
 </head>
 <body>
 <h1>{title_prefix}Schedules</h1>
-<a href="index.html" style="color:#1abc9c; font-size:13px;">Home</a> &nbsp;
-<a href="callflow.html" style="color:#1abc9c; font-size:13px;">Call Flow</a> &nbsp;
-<a href="callhandler_map.html" style="color:#1abc9c; font-size:13px;">Graph View</a> &nbsp;
-<a href="callhandler_report.html" style="color:#1abc9c; font-size:13px;">Handlers &amp; Routing</a> &nbsp;
-<a href="test_times.html" style="color:#1abc9c; font-size:13px;">Test Times</a>
 
 <div class="section-header"><h2 id="schedules">Business Hours</h2><button class="copy-btn" onclick="copyTableAsMd('scheduleTable', this)">Copy as Markdown</button></div>
 <table id="scheduleTable">
@@ -2660,6 +2676,7 @@ function copyTableAsMd(tableId, btn) {{
 }}
 </script>
 <a href="#" class="back-to-top">&uarr; Top</a>
+{floating_nav_html("schedules.html")}
 </body>
 </html>'''
 
@@ -2723,10 +2740,6 @@ tr:hover {{ background: #16213e; }}
 <body>
 <h1>{title_prefix}Test Times</h1>
 <p class="subtitle">Unique times to call and verify the auto attendant routes correctly for each schedule state.</p>
-<a href="index.html" style="color:#1abc9c; font-size:13px;">Home</a> &nbsp;
-<a href="callflow.html" style="color:#1abc9c; font-size:13px;">Call Flow</a> &nbsp;
-<a href="schedules.html" style="color:#1abc9c; font-size:13px;">Schedules</a> &nbsp;
-<a href="callhandler_report.html" style="color:#1abc9c; font-size:13px;">Handlers &amp; Routing</a>
 
 <div class="note">
 <strong>Holiday Testing:</strong> Create a temporary holiday schedule entry for today's date in Cisco Unity Connection
@@ -2930,6 +2943,7 @@ function copyDayTable(day, btn, label) {{
 }}
 </script>
 <a href="#" class="back-to-top">&uarr; Top</a>
+{floating_nav_html("test_times.html")}
 </body>
 </html>'''
 
