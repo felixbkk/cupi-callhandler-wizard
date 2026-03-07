@@ -1739,7 +1739,7 @@ function showDetails(d) {{
                 html += '<div class="detail-row" style="padding:4px 0;"><span style="color:#1abc9c; font-size:12px;">&#9835; ' + esc(a.greeting) + disTag + sysTag + '</span> <span style="color:#666; font-size:11px;">No audio file</span></div>';
             }} else {{
                 html += '<div class="detail-row" style="padding:4px 0;"><span style="color:#1abc9c; font-size:12px;">&#9835; ' + esc(a.greeting) + disTag + sysTag + codecTag + '</span><br>' +
-                    '<audio controls preload="none" style="width:100%; max-width:200px; height:32px; margin-top:2px; color-scheme:dark;"><source src="' + esc(a.url) + '" type="audio/wav"></audio></div>';
+                    '<audio controls preload="none" onloadedmetadata="this.playbackRate=2.0" style="width:100%; max-width:200px; height:32px; margin-top:2px; color-scheme:dark;"><source src="' + esc(a.url) + '" type="audio/wav"></audio></div>';
             }}
         }});
     }}
@@ -2129,7 +2129,7 @@ function renderTable() {{
                     h += ' <span style="color:#666; font-size:11px;">No audio file</span>';
                 }} else {{
                     h += (a.codecWarning ? ' <span style="color:#e67e22; font-size:10px;" title="' + esc(a.codec) + ' — may not play in browser">&#9888; ' + esc(a.codec) + '</span>' : '') +
-                        '<br><audio controls preload="none" style="width:200px; height:32px; color-scheme:dark;"><source src="' + esc(a.url) + '" type="audio/wav"></audio>';
+                        '<br><audio controls preload="none" onloadedmetadata="this.playbackRate=2.0" style="width:200px; height:32px; color-scheme:dark;"><source src="' + esc(a.url) + '" type="audio/wav"></audio>';
                 }}
                 return h;
             }}).join("<br>")
@@ -2230,7 +2230,7 @@ function renderCallFlowTrees(activeEdges) {{
                     h += ' <span style="color:#666; font-size:11px;">No audio file</span>';
                 }} else {{
                     h += (a.codecWarning ? ' <span style="color:#e67e22; font-size:10px;">&#9888; ' + esc(a.codec) + '</span>' : '') +
-                        '<br>' + prefix + '<audio controls preload="none" style="width:200px; height:32px; color-scheme:dark;"><source src="' + esc(a.url) + '" type="audio/wav"></audio>';
+                        '<br>' + prefix + '<audio controls preload="none" onloadedmetadata="this.playbackRate=2.0" style="width:200px; height:32px; color-scheme:dark;"><source src="' + esc(a.url) + '" type="audio/wav"></audio>';
                 }}
                 return h;
             }});
@@ -2750,7 +2750,7 @@ function createCard(node, isEntry) {{
                 audioContent += ' <span style="color:#666; font-size:11px;">No audio file</span>';
             }} else {{
                 audioContent += (a.codecWarning ? ' <span style="color:#e67e22; font-size:10px;" title="' + esc(a.codec) + ' — may not play in browser">&#9888; ' + esc(a.codec) + '</span>' : '') +
-                    '<br><audio controls preload="none" style="width:100%; max-width:200px; height:32px; margin-top:2px; color-scheme:dark;"><source src="' + esc(a.url) + '" type="audio/wav"></audio>';
+                    '<br><audio controls preload="none" onloadedmetadata="this.playbackRate=2.0" style="width:100%; max-width:200px; height:32px; margin-top:2px; color-scheme:dark;"><source src="' + esc(a.url) + '" type="audio/wav"></audio>';
             }}
             row.innerHTML = audioContent;
             card.appendChild(row);
