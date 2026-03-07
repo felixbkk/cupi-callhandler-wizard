@@ -2731,7 +2731,8 @@ tr:hover {{ background: #16213e; }}
 .no-transitions {{ color: #888; font-style: italic; padding: 16px 0; }}
 .copy-btn {{ padding: 4px 10px; border: 1px solid #0f3460; background: #16213e; color: #888; cursor: pointer; border-radius: 3px; font-size: 11px; transition: all 0.2s; margin-left: 12px; }}
 .copy-btn:hover {{ color: #e0e0e0; border-color: #e94560; }}
-.section-header {{ display: flex; align-items: center; }}
+.section-header {{ display: flex; align-items: center; gap: 12px; }}
+.section-header h2 {{ margin: 0; }}
 .back-to-top {{ position: fixed; bottom: 16px; left: 16px; padding: 8px 14px; background: #0f3460; border: 1px solid #0f3460; color: #e0e0e0; cursor: pointer; border-radius: 4px; font-size: 12px; z-index: 100; text-decoration: none; }}
 .back-to-top:hover {{ background: #1a1a4e; border-color: #e94560; }}
 .day-off {{ background: #1a1a2e; }}
