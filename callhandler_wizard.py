@@ -23,7 +23,6 @@ import ssl
 
 import requests
 from requests.adapters import HTTPAdapter
-from urllib3.util.ssl_ import create_urllib3_context
 
 requests.packages.urllib3.disable_warnings(
     requests.packages.urllib3.exceptions.InsecureRequestWarning
@@ -2683,13 +2682,33 @@ class _LegacySSLAdapter(HTTPAdapter):
 
 
 def connect(args):
-    """Create an authenticated session from CLI args."""
+    """Create an authenticated session from CLI args.
+
+    Tries a standard TLS connection first.  If the handshake fails
+    (common on CUC 10.x and other legacy servers), automatically
+    retries with the legacy SSL adapter.
+    """
     host = args.host.rstrip("/")
     ping_check(host)
     password = getpass.getpass(f"Password for {args.user}@{host}: ")
     session = requests.Session()
     session.auth = (args.user, password)
-    session.mount("https://", _LegacySSLAdapter())
+
+    # Quick probe with default TLS settings
+    test_url = f"{host}/vmrest/version"
+    try:
+        session.get(test_url, verify=False, timeout=10)
+        print("  TLS: standard connection OK")
+    except (requests.exceptions.SSLError, requests.exceptions.ConnectionError):
+        print("  TLS: standard handshake failed, falling back to legacy TLS")
+        session.mount("https://", _LegacySSLAdapter())
+        try:
+            session.get(test_url, verify=False, timeout=10)
+            print("  TLS: legacy connection OK")
+        except Exception as e:
+            print(f"  Warning: legacy TLS probe also failed: {e}")
+            # Keep the legacy adapter mounted — let later calls surface the real error
+
     return session, host
 
 
