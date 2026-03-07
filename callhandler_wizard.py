@@ -2882,6 +2882,7 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans
 <label>Start from:</label>
 <select id="entryPoint" onchange="renderFlow()"></select>
 </div>
+<button class="schedule-btn" onclick="exportSVG()" title="Save current call flow as SVG image">Export SVG</button>
 </div>
 <div class="breadcrumb" id="breadcrumb"></div>
 <div class="flow-container" id="flowContainer">
@@ -3285,6 +3286,49 @@ function scrollToCard(nodeId) {{
         void el.offsetWidth;
         el.classList.add("flash");
     }}
+}}
+
+function exportSVG() {{
+    const container = document.getElementById("flowContainer");
+    const rect = container.getBoundingClientRect();
+    const w = container.scrollWidth;
+    const h = container.scrollHeight;
+
+    // Gather all stylesheets into one string
+    let css = "";
+    for (const sheet of document.styleSheets) {{
+        try {{
+            for (const rule of sheet.cssRules) css += rule.cssText + "\\n";
+        }} catch(e) {{}}
+    }}
+
+    // Clone the container so we don't modify the live DOM
+    const clone = container.cloneNode(true);
+    // Remove any audio elements (not supported in SVG)
+    clone.querySelectorAll("audio").forEach(el => el.remove());
+
+    const isDark = !document.body.classList.contains("light-mode");
+    const bg = isDark ? "#1a1a2e" : "#f0f2f5";
+    const bodyClass = isDark ? "" : ' class="light-mode"';
+
+    const svgStr = `<svg xmlns="http://www.w3.org/2000/svg" width="${{w}}" height="${{h}}" viewBox="0 0 ${{w}} ${{h}}">
+<style>${{css}}</style>
+<rect width="100%" height="100%" fill="${{bg}}"/>
+<foreignObject width="100%" height="100%">
+<body xmlns="http://www.w3.org/1999/xhtml"${{bodyClass}} style="background:${{bg}}; margin:0; padding:0;">
+${{clone.outerHTML}}
+</body>
+</foreignObject>
+</svg>`;
+
+    const blob = new Blob([svgStr], {{ type: "image/svg+xml" }});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const entryName = (nodeMap[document.getElementById("entryPoint").value] || {{}}).name || "callflow";
+    a.download = entryName.replace(/[^a-zA-Z0-9_-]/g, "_") + "_" + activeSchedule + ".svg";
+    a.href = url;
+    a.click();
+    URL.revokeObjectURL(url);
 }}
 
 // Init
