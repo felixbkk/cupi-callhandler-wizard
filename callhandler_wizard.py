@@ -1352,6 +1352,45 @@ body.light-mode .no-transitions {{ color: #888 !important; }}
 
 /* Audio player light mode */
 body.light-mode audio {{ color-scheme: light !important; }}
+
+/* Report page inputs */
+body.light-mode .filter-bar input {{ background: #fff !important; border-color: #d0d7de !important; color: #1f2328 !important; }}
+body.light-mode .filter-bar select {{ background: #fff !important; border-color: #d0d7de !important; color: #1f2328 !important; }}
+body.light-mode .oid {{ color: #888 !important; }}
+
+/* Audit page */
+body.light-mode .summary-bar .summary-card {{ background: #fff !important; border-color: #d0d7de !important; }}
+body.light-mode .summary-card .label {{ color: #666 !important; }}
+body.light-mode .badge-ok {{ background: #d0d7de !important; color: #666 !important; }}
+body.light-mode .section-empty {{ color: #888 !important; }}
+body.light-mode .level-critical {{ color: #cf222e !important; }}
+body.light-mode .level-warning {{ color: #bf8700 !important; }}
+body.light-mode .level-info {{ color: #1a7f37 !important; }}
+body.light-mode a {{ color: #0969da; }}
+
+/* Test times page */
+body.light-mode .cheat-group {{ background: #fff !important; border-color: #d0d7de !important; }}
+body.light-mode .cheat-group-name {{ color: #cf222e !important; }}
+body.light-mode .cheat-group-ext {{ color: #666 !important; }}
+body.light-mode .cheat-step .step-num {{ color: #888 !important; }}
+body.light-mode .cheat-step .action {{ color: #1f2328 !important; }}
+body.light-mode .cheat-step .key {{ background: #e8ecf0 !important; border-color: #d0d7de !important; color: #1f2328 !important; }}
+body.light-mode .cheat-step .target {{ color: #666 !important; }}
+body.light-mode .cheat-divider {{ border-color: #d0d7de !important; }}
+body.light-mode .dial-path {{ color: #0969da !important; }}
+body.light-mode .dial-entry {{ color: #cf222e !important; }}
+body.light-mode .day-off {{ background: #f6f8fa !important; }}
+body.light-mode .subtitle {{ color: #666 !important; }}
+
+/* Schedules page */
+body.light-mode .audit-banner.critical {{ background: #fff0f0 !important; border-color: #cf222e !important; color: #cf222e !important; }}
+body.light-mode .audit-banner.warning {{ background: #fff8e6 !important; border-color: #bf8700 !important; color: #bf8700 !important; }}
+body.light-mode .audit-banner.info {{ background: #f0fff4 !important; border-color: #1a7f37 !important; color: #1a7f37 !important; }}
+
+/* Flow trees page */
+body.light-mode .flow-tree {{ background: #fff !important; border-color: #d0d7de !important; }}
+body.light-mode .flow-root {{ color: #1a7f37 !important; }}
+body.light-mode .flow-muted {{ color: #888 !important; }}
 </style>
 <div class="fnav">
 {links_html}
@@ -4314,6 +4353,7 @@ h1 {{ color: #e94560; font-size: 24px; margin-bottom: 8px; }}
     }}
 }})();
 </script>
+{floating_nav_html("index.html")}
 </body>
 </html>'''
 
