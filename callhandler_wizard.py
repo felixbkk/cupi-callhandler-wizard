@@ -3239,7 +3239,7 @@ function copyTableAsMd(tableId, btn) {{
 </html>'''
 
 
-def generate_test_times_html(schedules, site_name="", host=""):
+def generate_test_times_html(schedules, site_name="", host="", nodes=None, edges=None):
     """Generate a page listing all unique times to test the call tree for a generic week."""
     title_prefix = f"{site_name} — " if site_name else ""
     # Build raw schedule data with minute values and day flags for JS processing
@@ -3260,7 +3260,12 @@ def generate_test_times_html(schedules, site_name="", host=""):
             details.append({"start": start_min, "end": end_min, "days": day_flags})
         if details:
             raw_schedules.append({"name": s.get("DisplayName", ""), "details": details})
-    report_data = json.dumps({"schedules": raw_schedules, "siteName": site_name})
+    report_data = json.dumps({
+        "schedules": raw_schedules,
+        "siteName": site_name,
+        "nodes": nodes or [],
+        "edges": edges or [],
+    })
 
     return f'''<!DOCTYPE html>
 <html lang="en">
@@ -3294,6 +3299,14 @@ tr:hover {{ background: #16213e; }}
 .back-to-top {{ position: fixed; bottom: 16px; left: 16px; padding: 8px 14px; background: #0f3460; border: 1px solid #0f3460; color: #e0e0e0; cursor: pointer; border-radius: 4px; font-size: 12px; z-index: 100; text-decoration: none; }}
 .back-to-top:hover {{ background: #1a1a4e; border-color: #e94560; }}
 .day-off {{ background: #1a1a2e; }}
+.dial-path {{ font-family: monospace; font-weight: 600; color: #1abc9c; letter-spacing: 1px; }}
+.dial-entry {{ color: #e94560; font-weight: 600; }}
+.sched-tag {{ display: inline-block; padding: 1px 6px; border-radius: 8px; font-size: 10px; font-weight: 600; margin-left: 4px; }}
+.sched-tag.offhours {{ background: #5b3a1e; color: #f39c12; }}
+.sched-tag.holiday {{ background: #4a1a2e; color: #e74c3c; }}
+.sched-tag.standard {{ background: #1a3a2e; color: #2ecc71; }}
+.sched-tag.alternate {{ background: #2a1a4e; color: #9b59b6; }}
+.sched-tag.always {{ background: #1a2a3e; color: #3498db; }}
 </style>
 </head>
 <body>
@@ -3474,6 +3487,154 @@ const DAY_LABELS = {{ Mon: "Monday", Tue: "Tuesday", Wed: "Wednesday", Thu: "Thu
         '</tbody></table>' +
         '<p style="color:#888; font-size:12px; margin-top:8px;">Create a temporary holiday for today in Unity Connection to test these.</p>';
     container.appendChild(holidaySection);
+}})();
+
+// --- Dial Path Cheat Sheet ---
+(function() {{
+    if (!data.nodes || !data.nodes.length || !data.edges || !data.edges.length) return;
+
+    const container = document.getElementById("content");
+    const nodeMap = {{}};
+    data.nodes.forEach(n => nodeMap[n.id] = n);
+
+    const schedLabels = {{ standard: "Standard", offhours: "Off Hours", holiday: "Holiday", alternate: "Alternate", always: "All" }};
+
+    // Build per-schedule dial paths via BFS
+    const schedules = ["standard", "offhours", "holiday"];
+    // Map: handlerId -> {{ name, extension, paths: [{{ keys: "1 > 3 > 2", schedule: "standard", entry: "Rule Name" }}] }}
+    const allPaths = {{}};
+
+    schedules.forEach(sched => {{
+        const activeEdges = data.edges.filter(e => e.schedule === "always" || e.schedule === sched);
+        const adj = {{}};
+        activeEdges.forEach(e => {{
+            (adj[e.source] = adj[e.source] || []).push(e);
+        }});
+
+        // Find routing rules with outgoing edges
+        const roots = data.nodes.filter(n => n.type === "routingrule" && (adj[n.id] || []).length > 0);
+
+        roots.forEach(root => {{
+            const entries = adj[root.id] || [];
+            entries.forEach(ruleEdge => {{
+                const entryName = root.name;
+                // BFS from the rule target
+                const queue = [{{ nodeId: ruleEdge.target, keys: [] }}];
+                const visited = new Set([root.id, ruleEdge.target]);
+
+                // Record the direct target
+                const targetNode = nodeMap[ruleEdge.target];
+                if (targetNode && targetNode.type === "callhandler") {{
+                    if (!allPaths[ruleEdge.target]) allPaths[ruleEdge.target] = {{ name: targetNode.name, extension: targetNode.extension || "", paths: [] }};
+                    allPaths[ruleEdge.target].paths.push({{ keys: "(entry)", schedule: sched, entry: entryName }});
+                }}
+
+                while (queue.length) {{
+                    const {{ nodeId, keys }} = queue.shift();
+                    const edges = adj[nodeId] || [];
+                    edges.forEach(edge => {{
+                        if (visited.has(edge.target)) return;
+                        visited.add(edge.target);
+                        const tgt = nodeMap[edge.target];
+                        if (!tgt) return;
+
+                        // Extract the key press from the edge label
+                        let keyLabel = "";
+                        const m = edge.label.match(/^Key\\s+(\\S+)/);
+                        if (m) {{
+                            keyLabel = m[1];
+                        }} else if (edge.label.startsWith("After:")) {{
+                            keyLabel = "(wait)";
+                        }} else if (edge.label.startsWith("Xfer:")) {{
+                            keyLabel = "(xfer)";
+                        }} else {{
+                            keyLabel = "(" + edge.label.split(":")[0].toLowerCase() + ")";
+                        }}
+
+                        const newKeys = [...keys, keyLabel];
+
+                        if (tgt.type === "callhandler" || tgt.type === "interview" || tgt.type === "directory") {{
+                            if (!allPaths[edge.target]) allPaths[edge.target] = {{ name: tgt.name, extension: tgt.extension || "", paths: [] }};
+                            allPaths[edge.target].paths.push({{ keys: newKeys.join(" > "), schedule: sched, entry: entryName }});
+                        }}
+
+                        // Continue BFS for call handlers (they have sub-menus)
+                        if (tgt.type === "callhandler") {{
+                            queue.push({{ nodeId: edge.target, keys: newKeys }});
+                        }}
+                    }});
+                }}
+            }});
+        }});
+    }});
+
+    // Deduplicate paths — same handler+keys+entry across multiple schedules -> merge schedules
+    Object.values(allPaths).forEach(hp => {{
+        const merged = [];
+        hp.paths.forEach(p => {{
+            const existing = merged.find(m => m.keys === p.keys && m.entry === p.entry);
+            if (existing) {{
+                if (!existing.schedules.includes(p.schedule)) existing.schedules.push(p.schedule);
+            }} else {{
+                merged.push({{ keys: p.keys, entry: p.entry, schedules: [p.schedule] }});
+            }}
+        }});
+        hp.paths = merged;
+    }});
+
+    // Sort handlers: by entry point, then by dial path depth
+    const sortedHandlers = Object.values(allPaths).sort((a, b) => {{
+        const aFirst = a.paths[0] || {{ keys: "", entry: "" }};
+        const bFirst = b.paths[0] || {{ keys: "", entry: "" }};
+        return aFirst.entry.localeCompare(bFirst.entry) ||
+            (aFirst.keys.split(">").length) - (bFirst.keys.split(">").length) ||
+            a.name.localeCompare(b.name);
+    }});
+
+    if (!sortedHandlers.length) return;
+
+    const section = document.createElement("div");
+    let heading = '<div class="section-header"><h2>Dial Path Cheat Sheet</h2>';
+    heading += '<button class="copy-btn" id="copyDialPaths">Copy as Markdown</button></div>';
+    heading += '<p style="color:#888; font-size:12px; margin-bottom:12px;">Every reachable handler and the exact key sequence to reach it from each entry point.</p>';
+    section.innerHTML = heading;
+
+    const tbl = document.createElement("table");
+    tbl.id = "table-dialpath";
+    tbl.innerHTML = '<thead><tr><th>Handler</th><th>Extension</th><th>Dial Path</th><th>Entry Point</th><th>Schedule</th></tr></thead>';
+    const tbody = document.createElement("tbody");
+
+    sortedHandlers.forEach(hp => {{
+        hp.paths.forEach((p, i) => {{
+            const tr = document.createElement("tr");
+            const schedTags = p.schedules.length === 3
+                ? '<span class="sched-tag always">All</span>'
+                : p.schedules.map(s => '<span class="sched-tag ' + s + '">' + (schedLabels[s] || s) + '</span>').join(" ");
+            tr.innerHTML =
+                '<td>' + (i === 0 ? esc(hp.name) : '') + '</td>' +
+                '<td>' + (i === 0 ? esc(hp.extension) : '') + '</td>' +
+                '<td class="dial-path">' + esc(p.keys) + '</td>' +
+                '<td class="dial-entry">' + esc(p.entry) + '</td>' +
+                '<td>' + schedTags + '</td>';
+            tbody.appendChild(tr);
+        }});
+    }});
+
+    tbl.appendChild(tbody);
+    section.appendChild(tbl);
+    container.appendChild(section);
+
+    document.getElementById("copyDialPaths").addEventListener("click", function() {{
+        const headers = ["Handler", "Extension", "Dial Path", "Entry Point", "Schedule"];
+        const lines = ["Dial Path Cheat Sheet", headers.join(" | "), headers.map(() => "---").join(" | ")];
+        sortedHandlers.forEach(hp => {{
+            hp.paths.forEach(p => {{
+                const schedText = p.schedules.length === 3 ? "All" : p.schedules.map(s => schedLabels[s] || s).join(", ");
+                lines.push([hp.name, hp.extension, p.keys, p.entry, schedText].join(" | "));
+            }});
+        }});
+        navigator.clipboard.writeText(lines.join("\\n")).then(() => flashBtn(this));
+    }});
 }})();
 
 function flashBtn(btn, msg) {{
@@ -4079,7 +4240,7 @@ def cmd_generate(args):
             f.write(sched_html)
 
         test_path = os.path.join(site_dir, "test_times.html")
-        test_html = generate_test_times_html(schedules, site_name=site_name, host=host)
+        test_html = generate_test_times_html(schedules, site_name=site_name, host=host, nodes=nodes, edges=edges)
         with open(test_path, "w", encoding="utf-8") as f:
             f.write(test_html)
 
