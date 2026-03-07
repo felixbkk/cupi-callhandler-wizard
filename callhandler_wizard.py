@@ -11,6 +11,7 @@ import json
 import os
 import platform
 import shutil
+import time
 import webbrowser
 import re
 import subprocess
@@ -2383,7 +2384,7 @@ function copyDebugOutput() {{
 
 def generate_flow_trees_html(nodes, edges, site_name="", host=""):
     title_prefix = f"{site_name} — " if site_name else ""
-    report_data = json.dumps({{"nodes": nodes, "edges": edges, "host": host, "siteName": site_name}})
+    report_data = json.dumps({"nodes": nodes, "edges": edges, "host": host, "siteName": site_name})
     return f'''<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -4124,36 +4125,66 @@ def cmd_generate(args):
         print(f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         print()
 
+        timings = []
+        run_start = time.perf_counter()
+
+        # --- Phase 1: Core data collection ---
+        t0 = time.perf_counter()
         try:
             call_handlers = fetch_call_handlers(session, host)
+        except (requests.exceptions.ConnectionError, requests.exceptions.HTTPError) as e:
+            print(f"Error: Could not fetch call handlers: {e}")
+            sys.exit(1)
+        timings.append(("Fetch call handlers", time.perf_counter() - t0, len(call_handlers)))
+
+        t0 = time.perf_counter()
+        try:
             interview_handlers = fetch_interview_handlers(session, host)
+        except (requests.exceptions.ConnectionError, requests.exceptions.HTTPError) as e:
+            print(f"Error: Could not fetch interview handlers: {e}")
+            sys.exit(1)
+        timings.append(("Fetch interview handlers", time.perf_counter() - t0, len(interview_handlers)))
+
+        t0 = time.perf_counter()
+        try:
             directory_handlers = fetch_directory_handlers(session, host)
+        except (requests.exceptions.ConnectionError, requests.exceptions.HTTPError) as e:
+            print(f"Error: Could not fetch directory handlers: {e}")
+            sys.exit(1)
+        timings.append(("Fetch directory handlers", time.perf_counter() - t0, len(directory_handlers)))
+
+        t0 = time.perf_counter()
+        try:
             routing_rules = fetch_routing_rules(session, host)
-        except requests.exceptions.ConnectionError as e:
-            print(f"Error: Could not connect to {host}: {e}")
+        except (requests.exceptions.ConnectionError, requests.exceptions.HTTPError) as e:
+            print(f"Error: Could not fetch routing rules: {e}")
             sys.exit(1)
-        except requests.exceptions.HTTPError as e:
-            print(f"Error: API request failed: {e}")
-            sys.exit(1)
+        timings.append(("Fetch routing rules", time.perf_counter() - t0, len(routing_rules)))
 
         # Non-critical data — continue if endpoints are unavailable
+        t0 = time.perf_counter()
         try:
             holiday_schedules = fetch_holiday_schedules(session, host)
         except (requests.exceptions.HTTPError, requests.exceptions.ConnectionError) as e:
             print(f"  Warning: Could not fetch holiday schedules: {e}")
             holiday_schedules = []
+        timings.append(("Fetch holiday schedules", time.perf_counter() - t0, len(holiday_schedules)))
 
+        t0 = time.perf_counter()
         try:
             schedules = fetch_schedules(session, host)
         except (requests.exceptions.HTTPError, requests.exceptions.ConnectionError) as e:
             print(f"  Warning: Could not fetch schedules: {e}")
             schedules = []
+        timings.append(("Fetch schedules", time.perf_counter() - t0, len(schedules)))
 
+        t0 = time.perf_counter()
         try:
             schedule_sets = fetch_schedule_sets(session, host)
         except (requests.exceptions.HTTPError, requests.exceptions.ConnectionError) as e:
             print(f"  Warning: Could not fetch schedule sets: {e}")
             schedule_sets = []
+        timings.append(("Fetch schedule sets", time.perf_counter() - t0, len(schedule_sets)))
 
         # Build schedule set OID -> display name lookup
         schedule_set_map = {s["ObjectId"]: s.get("DisplayName", "") for s in schedule_sets}
@@ -4161,6 +4192,7 @@ def cmd_generate(args):
         # Best-effort extension resolution: users and contacts
         users = []
         contacts = []
+        t0 = time.perf_counter()
         try:
             users = fetch_users(session, host)
         except (requests.exceptions.HTTPError, requests.exceptions.ConnectionError) as e:
@@ -4170,6 +4202,7 @@ def cmd_generate(args):
         except (requests.exceptions.HTTPError, requests.exceptions.ConnectionError) as e:
             print(f"  Warning: Could not fetch contacts: {e}")
         ext_map = build_extension_map(users, contacts, call_handlers)
+        timings.append(("Fetch users + contacts", time.perf_counter() - t0, len(users) + len(contacts)))
         if ext_map:
             print(f"  Extension lookup: {len(ext_map)} extensions resolved")
 
@@ -4182,11 +4215,14 @@ def cmd_generate(args):
               f"{len(schedule_sets)} schedule sets, "
               f"{len(users)} users, {len(contacts)} contacts")
 
+        # --- Phase 2: Graph building (per-handler sub-resource fetches) ---
         print("\nBuilding graph (fetching menu entries, transfer rules, greetings, rule conditions)...")
+        t0 = time.perf_counter()
         nodes, edges = build_graph(call_handlers, interview_handlers, routing_rules, session, host,
                                    schedule_set_map=schedule_set_map,
                                    directory_handlers=directory_handlers,
                                    extension_map=ext_map)
+        timings.append(("Build graph (menu/xfer/greet/cond)", time.perf_counter() - t0, len(call_handlers)))
 
         # Summary
         classifications = {}
@@ -4217,9 +4253,12 @@ def cmd_generate(args):
                     tag = "CRITICAL" if finding["level"] == "critical" else "WARNING" if finding["level"] == "warning" else "OK"
                     print(f"  [{tag}] {finding['message']}")
 
+        # --- Phase 3: Audio download ---
         if audio_count:
             print("\nDownloading greeting audio files...")
+            t0 = time.perf_counter()
             download_audio_files(session, nodes, site_dir)
+            timings.append(("Download audio files", time.perf_counter() - t0, audio_count))
             # Warn if Standard greeting has no audio (the one callers actually hear)
             for n in nodes:
                 if n.get("type") != "callhandler":
@@ -4230,6 +4269,7 @@ def cmd_generate(args):
 
         d3_local = copy_d3(site_dir)
 
+        # --- Phase 4: HTML generation ---
         map_path = os.path.join(site_dir, "callhandler_map.html")
         report_path = os.path.join(site_dir, "callhandler_report.html")
         flow_path = os.path.join(site_dir, "callflow.html")
@@ -4237,6 +4277,8 @@ def cmd_generate(args):
         index_path = os.path.join(site_dir, "index.html")
 
         print(f"\nGenerating reports in {site_dir}/...")
+        t0 = time.perf_counter()
+
         html = generate_html(nodes, edges, d3_local=d3_local, site_name=site_name, host=host)
         with open(map_path, "w", encoding="utf-8") as f:
             f.write(html)
@@ -4271,6 +4313,8 @@ def cmd_generate(args):
         idx_html = generate_index_html(site_name=site_name)
         with open(index_path, "w", encoding="utf-8") as f:
             f.write(idx_html)
+
+        timings.append(("Generate HTML reports", time.perf_counter() - t0, 8))
 
         # Write audit.log with all findings
         audit_lines = []
@@ -4337,7 +4381,15 @@ def cmd_generate(args):
         with open(audit_path, "w", encoding="utf-8") as f:
             f.write("\n".join(audit_lines) + "\n")
 
-        print(f"Done! Reports written to {site_dir}/")
+        # --- Timing summary ---
+        total_elapsed = time.perf_counter() - run_start
+        print(f"\nPerformance:")
+        for label, elapsed, count in timings:
+            print(f"  {label:<42} {elapsed:6.1f}s  ({count} items)")
+        print(f"  {'─'*42} {'─'*6}")
+        print(f"  {'Total':<42} {total_elapsed:6.1f}s")
+
+        print(f"\nDone! Reports written to {site_dir}/")
 
         # Final audit banner — make it obvious in PowerShell
         if has_findings:
