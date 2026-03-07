@@ -47,6 +47,10 @@ Cisco Unity Connection supports the following audio formats for greeting recordi
 
 The wizard automatically detects the codec of each downloaded WAV file by reading the file header and reports a summary in the console output.
 
+> **WARNING: Audio plays at 2x speed by default.**
+>
+> The embedded audio players are set to **2x playback speed** so you can quickly review greetings without waiting through long recordings. **This does not mean your recording is sped up for callers.** Callers hear the greeting at normal speed. You can adjust the playback rate using your browser's audio controls (right-click the player).
+
 ---
 
 ## Report Pages
