@@ -506,6 +506,26 @@ def greeting_audio_url(host, handler_id, greeting_type, language_code="1033"):
     )
 
 
+# WAV format tag → codec name
+_WAV_FORMAT_NAMES = {
+    1: "PCM linear", 6: "G.711 a-law", 7: "G.711 mu-law",
+    49: "GSM 06.10", 100: "G.726", 307: "G.729a",
+}
+
+
+def _detect_wav_codec(filepath):
+    """Read the WAV header to identify the audio codec.  Returns (format_tag, name)."""
+    try:
+        with open(filepath, "rb") as f:
+            header = f.read(22)
+            if len(header) >= 22 and header[:4] == b"RIFF" and header[8:12] == b"WAVE":
+                fmt_tag = int.from_bytes(header[20:22], "little")
+                return fmt_tag, _WAV_FORMAT_NAMES.get(fmt_tag, f"Unknown ({fmt_tag})")
+    except Exception:
+        pass
+    return None, "Unknown"
+
+
 def download_audio_files(session, nodes, site_dir):
     """Download all greeting audio WAV files into site_dir/audio/.
 
@@ -519,6 +539,7 @@ def download_audio_files(session, nodes, site_dir):
         return
     downloaded = 0
     failed = 0
+    codec_counts = {}
     for node in nodes:
         handler_name = re.sub(r'[^\w\s\-]', '', node.get("name", "unknown")).strip()
         for a in node.get("audio", []):
@@ -535,6 +556,12 @@ def download_audio_files(session, nodes, site_dir):
                         for chunk in resp.iter_content(8192):
                             f.write(chunk)
                     a["url"] = f"audio/{filename}"
+                    fmt_tag, codec_name = _detect_wav_codec(local_path)
+                    a["codec"] = codec_name
+                    codec_counts[codec_name] = codec_counts.get(codec_name, 0) + 1
+                    # Flag codecs that browsers can't play
+                    if fmt_tag and fmt_tag not in (1, 6, 7):
+                        a["codecWarning"] = True
                     downloaded += 1
                 else:
                     failed += 1
@@ -545,6 +572,8 @@ def download_audio_files(session, nodes, site_dir):
     if failed:
         result += f", {failed} failed"
     print(f"{result}{' ' * 20}")
+    if codec_counts:
+        print(f"  Codecs: {', '.join(f'{name} ({count})' for name, count in sorted(codec_counts.items()))}")
 
 
 _HANDLER_TYPE_MAP = {"3": "callhandler", "5": "interview", "6": "directory"}
