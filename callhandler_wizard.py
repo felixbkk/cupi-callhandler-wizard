@@ -421,6 +421,7 @@ def build_graph(call_handlers, interview_handlers, routing_rules, session, host,
         sched_name = ""
         if schedule_set_map and sched_set_id in schedule_set_map:
             sched_name = schedule_set_map[sched_set_id]
+        post_greeting = str(ch.get("PlayPostGreetingRecording", "0"))
         nodes[oid] = {
             "id": oid,
             "name": name,
@@ -429,6 +430,8 @@ def build_graph(call_handlers, interview_handlers, routing_rules, session, host,
             "classification": "normal",
             "audio": [],
             "scheduleName": sched_name,
+            "system": str(ch.get("Undeletable", "false")).lower() == "true",
+            "postGreeting": post_greeting != "0",
         }
 
     # Add interview handler nodes
@@ -1372,7 +1375,7 @@ function renderTable() {{
 
         const tr = document.createElement("tr");
         tr.innerHTML =
-            '<td style="color:' + color + '; font-weight:600">' + esc(n.name) + '</td>' +
+            '<td style="color:' + color + '; font-weight:600">' + esc(n.name) + (n.system ? ' <span class="muted">(system)</span>' : "") + (n.postGreeting ? ' <span style="color:#e67e22">&#9654; post-greeting</span>' : "") + '</td>' +
             '<td>' + esc(n.extension) + '</td>' +
             '<td>' + esc(n.type) + '</td>' +
             '<td style="color:' + color + '">' + esc(clsLabel) + '</td>' +
