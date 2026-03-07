@@ -2736,8 +2736,9 @@ const DAY_LABELS = {{ Mon: "Monday", Tue: "Tuesday", Wed: "Wednesday", Thu: "Thu
         const windows = dayWindows[day].sort((a, b) => a.start - b.start);
 
         let heading = '<div class="section-header"><h2>' + DAY_LABELS[day] + '</h2>';
-        heading += '<button class="copy-btn" onclick="copyDayTable(\'' + day + '\', this)">Copy as Markdown</button></div>';
+        heading += '<button class="copy-btn" data-day="' + day + '">Copy as Markdown</button></div>';
         section.innerHTML = heading;
+        section.querySelector(".copy-btn").addEventListener("click", function() {{ copyDayTable(this.dataset.day, this); }});
 
         if (!windows.length) {{
             section.innerHTML += '<p class="no-transitions">No business hours scheduled — Off Hours all day.</p>';
