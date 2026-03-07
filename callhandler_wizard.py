@@ -1272,6 +1272,8 @@ tr:hover {{ background: #16213e; }}
 .filter-bar select {{ padding: 8px 12px; border: 1px solid #0f3460; background: #16213e; color: #e0e0e0; border-radius: 4px; font-size: 13px; }}
 .audio-link {{ color: #1abc9c; text-decoration: none; font-size: 12px; }}
 .audio-link:hover {{ text-decoration: underline; }}
+.back-to-top {{ position: fixed; bottom: 16px; left: 16px; padding: 8px 14px; background: #0f3460; border: 1px solid #0f3460; color: #e0e0e0; cursor: pointer; border-radius: 4px; font-size: 12px; z-index: 100; text-decoration: none; }}
+.back-to-top:hover {{ background: #1a1a4e; border-color: #e94560; }}
 .debug-toggle {{ position: fixed; bottom: 16px; right: 16px; padding: 8px 14px; background: #0f3460; border: 1px solid #e94560; color: #e94560; cursor: pointer; border-radius: 4px; font-size: 12px; z-index: 100; }}
 .debug-toggle:hover {{ background: #1a1a4e; }}
 #debugPanel {{ display: none; background: #0d1b2a; border: 1px solid #0f3460; border-radius: 8px; padding: 20px; margin-top: 32px; }}
@@ -1729,6 +1731,7 @@ function copyDebugOutput() {{
 }}
 </script>
 
+<a href="#" class="back-to-top">&uarr; Top</a>
 <button class="debug-toggle" onclick="toggleDebug()">Debug Tools</button>
 <div id="debugPanel">
 <h2>Debug Tools</h2>
