@@ -3173,8 +3173,10 @@ def cmd_handler(args):
             play = gr.get("PlayWhat", "?")
             action = gr.get("AfterGreetingAction", "?")
             target = gr.get("AfterGreetingTargetHandlerObjectId", "")
-            print(f"  [{gt}] PlayWhat={play} AfterAction={action} "
-                  f"Target={target or 'N/A'}")
+            enabled = gr.get("Enabled", "?")
+            lang = gr.get("LanguageCode", "?")
+            print(f"  [{gt}] Enabled={enabled} PlayWhat={play} Lang={lang} "
+                  f"AfterAction={action} Target={target or 'N/A'}")
 
         print("\n--- Menu Entries ---")
         for me in fetch_menu_entries(session, host, oid, name):
