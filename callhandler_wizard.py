@@ -223,9 +223,12 @@ _CONDITION_PARAMS = {
     "1": "Calling Number",
     "2": "Called Number",
     "3": "Forwarded From",
-    "5": "Port",
-    "7": "Schedule Set",
-    "9": "Phone System",
+    "4": "Origin",
+    "5": "Phone System",
+    "6": "Port",
+    "7": "Reason",
+    "8": "Schedule",
+    "9": "Trunk",
 }
 
 _CONDITION_OPS = {
@@ -233,6 +236,8 @@ _CONDITION_OPS = {
     "2": "Equals",
     "3": "Greater Than",
     "4": "Less Than",
+    "5": "Less Than or Equal",
+    "6": "Greater Than or Equal",
 }
 
 
@@ -313,40 +318,74 @@ def fetch_greetings(session, host, handler_id, handler_name):
 
 
 def fetch_holiday_schedules(session, host):
-    print("Fetching holiday schedules...")
-    path = "/vmrest/holidayschedules"
-    all_schedules = []
-    page = 0
-    while True:
-        params = {"rowsPerPage": ROWS_PER_PAGE, "pageNumber": page}
-        data = api_get(session, host, path, params)
-        total = int(data.get("@total", 0))
-        if total == 0:
-            break
-        schedules = data.get("HolidaySchedule", [])
-        if isinstance(schedules, dict):
-            schedules = [schedules]
-        all_schedules.extend(schedules)
-        print(f"  Fetched {len(all_schedules)}/{total} holiday schedules")
-        if len(all_schedules) >= total:
-            break
-        page += 1
+    """Fetch holiday schedules.
 
-    # Fetch individual holidays for each schedule
-    for sched in all_schedules:
+    Tries the legacy /vmrest/holidayschedules endpoint first.
+    Falls back to extracting schedules with IsHoliday=true from /vmrest/schedules.
+    """
+    # Try legacy endpoint first
+    try:
+        print("Fetching holiday schedules...")
+        path = "/vmrest/holidayschedules"
+        all_schedules = []
+        page = 0
+        while True:
+            params = {"rowsPerPage": ROWS_PER_PAGE, "pageNumber": page}
+            data = api_get(session, host, path, params)
+            total = int(data.get("@total", 0))
+            if total == 0:
+                break
+            schedules = data.get("HolidaySchedule", [])
+            if isinstance(schedules, dict):
+                schedules = [schedules]
+            all_schedules.extend(schedules)
+            print(f"  Fetched {len(all_schedules)}/{total} holiday schedules")
+            if len(all_schedules) >= total:
+                break
+            page += 1
+
+        # Fetch individual holidays for each schedule
+        for sched in all_schedules:
+            sched_id = sched.get("ObjectId", "")
+            sched_name = sched.get("DisplayName", "Unknown")
+            try:
+                data = api_get(session, host, f"/vmrest/holidayschedules/{sched_id}/holidays")
+                holidays = data.get("Holiday", [])
+                if isinstance(holidays, dict):
+                    holidays = [holidays]
+                sched["_holidays"] = holidays
+            except requests.exceptions.HTTPError:
+                sched["_holidays"] = []
+
+        return all_schedules
+    except requests.exceptions.HTTPError:
+        pass
+
+    # Fallback: extract from regular schedules (IsHoliday=true)
+    print("  Legacy endpoint unavailable, checking schedules for IsHoliday flag...")
+    all_schedules = paginated_fetch(session, host, "/vmrest/schedules", "Schedule")
+    holiday_scheds = [s for s in all_schedules
+                      if str(s.get("IsHoliday", "false")).lower() == "true"]
+    print(f"  Found {len(holiday_scheds)} holiday schedules from {len(all_schedules)} total")
+
+    # Fetch schedule details as the holiday entries
+    for sched in holiday_scheds:
         sched_id = sched.get("ObjectId", "")
-        sched_name = sched.get("DisplayName", "Unknown")
         try:
-            data = api_get(session, host, f"/vmrest/holidayschedules/{sched_id}/holidays")
-            holidays = data.get("Holiday", [])
-            if isinstance(holidays, dict):
-                holidays = [holidays]
-            sched["_holidays"] = holidays
+            data = api_get(session, host, f"/vmrest/schedules/{sched_id}/scheduledetails")
+            details = data.get("ScheduleDetail", [])
+            if isinstance(details, dict):
+                details = [details]
+            # Map detail fields to match legacy holiday format
+            sched["_holidays"] = [{
+                "DisplayName": d.get("Subject", d.get("DisplayName", "")),
+                "StartDate": d.get("StartDate", ""),
+                "EndDate": d.get("EndDate", ""),
+            } for d in details]
         except requests.exceptions.HTTPError:
-            print(f"  Warning: Failed to fetch holidays for schedule '{sched_name}'")
             sched["_holidays"] = []
 
-    return all_schedules
+    return holiday_scheds
 
 
 def fetch_schedules(session, host):
@@ -671,6 +710,8 @@ def build_graph(call_handlers, interview_handlers, routing_rules, session, host,
         rule_name = rule.get("DisplayName", rule.get("RuleName", "Routing Rule"))
         target_oid = rule.get("RouteTargetHandlerObjectId", "")
         rule_state = str(rule.get("State", "0"))
+        rule_type = str(rule.get("Type", "3"))
+        _RULE_TYPES = {"1": "Direct", "2": "Forwarded", "3": "Both"}
 
         # Fetch conditions for this rule
         conditions = fetch_routing_rule_conditions(session, host, rule_oid, rule_name)
@@ -691,13 +732,55 @@ def build_graph(call_handlers, interview_handlers, routing_rules, session, host,
             "classification": "root",
             "conditions": cond_list,
             "ruleState": "Active" if rule_state == "0" else "Inactive" if rule_state == "1" else "Invalid",
+            "ruleType": _RULE_TYPES.get(rule_type, "Unknown"),
         }
 
-        if target_oid and target_oid in nodes:
+        route_conv = rule.get("RouteTargetConversation", "")
+        if target_oid:
+            if target_oid not in nodes:
+                # Create stub node — use RouteTargetHandlerObjectType to infer type
+                obj_type = str(rule.get("RouteTargetHandlerObjectType", ""))
+                _TYPE_MAP = {"3": "callhandler", "5": "interview", "6": "directory"}
+                node_type = _TYPE_MAP.get(obj_type, "callhandler")
+                if route_conv == "AD":
+                    node_type = "directory"
+                elif route_conv == "PHInterview":
+                    node_type = "interview"
+                target_name = rule.get("RouteTargetHandlerDisplayName", "")
+                if not target_name:
+                    target_name = dir_handler_map.get(target_oid, f"Unknown ({target_oid[:8]})")
+                nodes[target_oid] = {
+                    "id": target_oid,
+                    "name": target_name,
+                    "extension": "",
+                    "type": node_type,
+                    "classification": "normal",
+                }
             routing_targets.add(target_oid)
+            conv_suffix = ""
+            if route_conv and route_conv not in ("PHTransfer", "PHGreeting"):
+                conv_suffix = f" [{CONVERSATION_LABELS.get(route_conv, route_conv)}]"
             edges.append({
                 "source": rule_oid,
                 "target": target_oid,
+                "label": f"{rule_name}{conv_suffix}",
+                "schedule": "always",
+            })
+        elif route_conv and route_conv not in ("PHTransfer", "PHGreeting"):
+            # Targetless conversation routing rule (SystemTransfer, SubSignIn, etc.)
+            conv_label = CONVERSATION_LABELS.get(route_conv, route_conv)
+            action_node_id = f"conv_{route_conv}"
+            if action_node_id not in nodes:
+                nodes[action_node_id] = {
+                    "id": action_node_id,
+                    "name": conv_label,
+                    "extension": "",
+                    "type": "action",
+                    "classification": "normal",
+                }
+            edges.append({
+                "source": rule_oid,
+                "target": action_node_id,
                 "label": rule_name,
                 "schedule": "always",
             })
@@ -2163,8 +2246,7 @@ PROBE_ENDPOINTS = [
     # Schedules
     ("/vmrest/schedules", "Schedules"),
     ("/vmrest/schedulesets", "Schedule Sets"),
-    ("/vmrest/holidayschedules", "Holiday Schedules"),
-    ("/vmrest/holidayschedulesets", "Holiday Schedule Sets"),
+    ("/vmrest/holidayschedules", "Holiday Schedules (legacy)"),
     ("/vmrest/schedules/{sched_id}/scheduledetails", "Schedule Details (sample)"),
     ("/vmrest/schedulesets/{schedset_id}/schedulessetmembers", "Schedule Set Members (sample)"),
     ("/vmrest/schedulesets/{schedset_id}/schedulesetmembers", "Schedule Set Members alt (sample)"),
