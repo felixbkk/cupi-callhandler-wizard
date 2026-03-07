@@ -3942,9 +3942,11 @@ def generate_audit_html(nodes, edges, holiday_audit, site_name="", host=""):
                     "enabled": a.get("enabled", True),
                 })
             if a.get("noAudio") and a.get("greeting") == "Standard" and a.get("enabled", True):
+                reachable = n.get("classification") in ("root", "normal")
                 no_audio_items.append({
                     "handler": n.get("name", ""),
                     "id": n["id"],
+                    "reachable": reachable,
                 })
             if a.get("failReason"):
                 audio_download_failures.append({
@@ -3958,6 +3960,19 @@ def generate_audit_html(nodes, edges, holiday_audit, site_name="", host=""):
     unreachable = [{"name": n["name"], "id": n["id"]} for n in nodes if n.get("classification") == "unreachable"]
     dead_ends = [{"name": n["name"], "id": n["id"]} for n in nodes if n.get("classification") == "deadend"]
 
+    # Extension dialing findings — unlocked keys on reachable handlers
+    ext_dialing_items = []
+    for n in nodes:
+        if n.get("type") != "callhandler":
+            continue
+        uk = n.get("unlockedKeys", [])
+        if uk and n.get("classification") in ("root", "normal"):
+            ext_dialing_items.append({
+                "handler": n.get("name", ""),
+                "id": n["id"],
+                "keys": uk,
+            })
+
     report_data = json.dumps({
         "host": host,
         "siteName": site_name,
@@ -3967,6 +3982,7 @@ def generate_audit_html(nodes, edges, holiday_audit, site_name="", host=""):
         "systemDefaultAudio": system_default_audio,
         "noAudioItems": no_audio_items,
         "audioDownloadFailures": audio_download_failures,
+        "extDialingItems": ext_dialing_items,
         "orphans": orphans,
         "unreachable": unreachable,
         "deadEnds": dead_ends,
@@ -4030,6 +4046,9 @@ a:hover {{ text-decoration: underline; }}
 <h2 id="sec-audio">Audio Issues <span id="badge-audio"></span></h2>
 <div id="audioSection"></div>
 
+<h2 id="sec-extdial">Extension Dialing <span id="badge-extdial"></span></h2>
+<div id="extDialSection"></div>
+
 <h2 id="sec-sysdefault">System Default Greetings <span id="badge-sysdefault"></span></h2>
 <div id="sysDefaultSection"></div>
 
@@ -4065,6 +4084,7 @@ const holidayWarnings = data.holidayAudit.filter(f => f.level === "warning").len
 const classificationCount = data.orphans.length + data.unreachable.length + data.deadEnds.length;
 const audioIssues = data.codecWarnings.length + data.noAudioItems.length + data.audioDownloadFailures.length;
 const sysDefaultCount = data.systemDefaultAudio.length;
+const extDialCount = data.extDialingItems.length;
 
 const totalIssues = totalWarnings + holidayCritical + holidayWarnings + classificationCount + audioIssues;
 
@@ -4077,6 +4097,7 @@ const totalIssues = totalWarnings + holidayCritical + holidayWarnings + classifi
         {{ count: holidayCritical + holidayWarnings, label: "Holiday Issues", cls: holidayCritical > 0 ? "critical" : (holidayWarnings > 0 ? "warning" : "clean") }},
         {{ count: classificationCount, label: "Classification", cls: classificationCount > 0 ? "warning" : "clean" }},
         {{ count: audioIssues, label: "Audio Issues", cls: audioIssues > 0 ? "warning" : "clean" }},
+        {{ count: extDialCount, label: "Ext. Dialing", cls: extDialCount > 0 ? "warning" : "clean" }},
         {{ count: sysDefaultCount, label: "System Default", cls: sysDefaultCount > 0 ? "warning" : "clean" }},
     ];
     bar.innerHTML = cards.map(c =>
@@ -4089,6 +4110,7 @@ document.getElementById("badge-warnings").innerHTML = badge(totalWarnings, "warn
 document.getElementById("badge-holidays").innerHTML = badge(holidayCritical + holidayWarnings, holidayCritical > 0 ? "critical" : "warning");
 document.getElementById("badge-classification").innerHTML = badge(classificationCount, "warning");
 document.getElementById("badge-audio").innerHTML = badge(audioIssues, "warning");
+document.getElementById("badge-extdial").innerHTML = badge(extDialCount, "warning");
 document.getElementById("badge-sysdefault").innerHTML = badge(sysDefaultCount, "info");
 
 // Handler warnings
@@ -4158,10 +4180,28 @@ document.getElementById("badge-sysdefault").innerHTML = badge(sysDefaultCount, "
         html += '<tr><td>' + handlerLink(f.handler, f.id) + '</td><td>' + esc(f.greeting) + '</td><td class="level-critical">Download failed — ' + esc(f.reason) + '</td></tr>';
     }});
     data.noAudioItems.forEach(n => {{
-        html += '<tr><td>' + handlerLink(n.handler, n.id) + '</td><td>Standard</td><td class="level-warning">No audio file — callers will hear silence or system default</td></tr>';
+        const severity = n.reachable ? "level-critical" : "level-warning";
+        const tag = n.reachable ? "Reachable handler — " : "";
+        html += '<tr><td>' + handlerLink(n.handler, n.id) + '</td><td>Standard</td><td class="' + severity + '">' + tag + 'No audio file — callers will hear silence or system default</td></tr>';
     }});
     data.codecWarnings.forEach(c => {{
         html += '<tr><td>' + handlerLink(c.handler, c.id) + '</td><td>' + esc(c.greeting) + '</td><td class="level-warning">' + esc(c.codec) + ' — not playable in browser</td></tr>';
+    }});
+    html += '</tbody></table>';
+    el.innerHTML = html;
+}})();
+
+// Extension dialing
+(function() {{
+    const el = document.getElementById("extDialSection");
+    if (!data.extDialingItems.length) {{
+        el.innerHTML = '<p class="section-empty">No reachable handlers have extension dialing enabled.</p>';
+        return;
+    }}
+    let html = '<p style="font-size:13px; color:#888; margin-bottom:10px;">Handlers where callers can dial extensions directly. Verify restriction tables prevent toll fraud (external/international dialing).</p>';
+    html += '<table><thead><tr><th>Handler</th><th>Unlocked Keys</th><th>Note</th></tr></thead><tbody>';
+    data.extDialingItems.forEach(e => {{
+        html += '<tr><td>' + handlerLink(e.handler, e.id) + '</td><td>' + e.keys.join(', ') + '</td><td class="level-warning">Verify restriction table blocks external dialing</td></tr>';
     }});
     html += '</tbody></table>';
     el.innerHTML = html;
@@ -4648,8 +4688,18 @@ def cmd_generate(args):
             if dead_ends:
                 audit_lines.append(f"  [WARNING] {len(dead_ends)} dead end(s): {', '.join(n['name'] for n in dead_ends)}")
 
+        # Extension dialing
+        ext_dialing = [n for n in nodes if n.get("type") == "callhandler"
+                       and n.get("unlockedKeys") and n.get("classification") in ("root", "normal")]
+        if ext_dialing:
+            audit_lines.append(f"\nEXTENSION DIALING ({len(ext_dialing)} handlers)")
+            audit_lines.append("-" * 40)
+            for n in ext_dialing:
+                keys = ", ".join(n["unlockedKeys"])
+                audit_lines.append(f"  [WARNING] {n['name']}: unlocked keys {keys} — verify restriction table blocks external dialing")
+
         # Summary
-        total_warnings = sum(len(w) for _, w in warned_nodes) + len(codec_warnings) + len(audio_failures)
+        total_warnings = sum(len(w) for _, w in warned_nodes) + len(codec_warnings) + len(audio_failures) + len(ext_dialing)
         total_critical = sum(1 for f in holiday_audit if f["level"] == "critical") if holiday_audit else 0
         has_findings = total_warnings > 0 or total_critical > 0 or orphans or unreachable or dead_ends
 
