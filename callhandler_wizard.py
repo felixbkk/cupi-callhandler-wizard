@@ -2320,12 +2320,15 @@ class _LegacySSLAdapter(HTTPAdapter):
     """HTTPS adapter that tolerates legacy TLS on older CUC servers."""
 
     def init_poolmanager(self, *args, **kwargs):
-        ctx = create_urllib3_context()
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
         ctx.check_hostname = False
         ctx.verify_mode = ssl.CERT_NONE
-        # Allow legacy renegotiation and older ciphers for legacy servers
+        # Allow legacy renegotiation for older servers
         ctx.options |= ssl.OP_LEGACY_SERVER_CONNECT
-        ctx.set_ciphers("DEFAULT:@SECLEVEL=1")
+        # Support TLS 1.0+ (older CUC servers may not support 1.2/1.3)
+        ctx.minimum_version = ssl.TLSVersion.MINIMUM_SUPPORTED
+        ctx.maximum_version = ssl.TLSVersion.MAXIMUM_SUPPORTED
+        ctx.set_ciphers("DEFAULT:@SECLEVEL=0")
         kwargs["ssl_context"] = ctx
         return super().init_poolmanager(*args, **kwargs)
 
