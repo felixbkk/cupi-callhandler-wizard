@@ -643,6 +643,14 @@ marker {{ fill: #666; }}
 <h2>Call Handler Map</h2>
 <a href="callhandler_report.html" style="color:#1abc9c; font-size:13px;">Switch to Table Report &rarr;</a>
 <div class="controls">
+<h3>Layout</h3>
+<div style="display:flex; gap:6px; flex-wrap:wrap;">
+<button class="toggle-btn active" id="layout-force" onclick="setLayout(\'force\')">Force</button>
+<button class="toggle-btn" id="layout-hierarchical" onclick="setLayout(\'hierarchical\')">Hierarchical</button>
+<button class="toggle-btn" id="layout-radial" onclick="setLayout(\'radial\')">Radial</button>
+</div>
+</div>
+<div class="controls">
 <h3>Navigation</h3>
 <div style="display:flex; gap:6px; flex-wrap:wrap;">
 <button class="toggle-btn" onclick="zoomIn()">Zoom In</button>
@@ -781,11 +789,109 @@ svg.append("defs").append("marker")
     .attr("d", "M0,-5L10,0L0,5")
     .attr("fill", "#666");
 
+// BFS depth from root nodes for hierarchical/radial layouts
+const adj = {{}};
+graphData.nodes.forEach(n => adj[n.id] = []);
+graphData.links.forEach(l => {{
+    const sid = typeof l.source === "object" ? l.source.id : l.source;
+    const tid = typeof l.target === "object" ? l.target.id : l.target;
+    adj[sid].push(tid);
+}});
+const roots = graphData.nodes.filter(n => n.type === "routingrule" || n.classification === "root");
+const depthMap = {{}};
+const bfsQueue = roots.map(r => {{ depthMap[r.id] = 0; return r.id; }});
+while (bfsQueue.length) {{
+    const nid = bfsQueue.shift();
+    (adj[nid] || []).forEach(tid => {{
+        if (depthMap[tid] === undefined) {{
+            depthMap[tid] = depthMap[nid] + 1;
+            bfsQueue.push(tid);
+        }}
+    }});
+}}
+const maxDepth = Math.max(1, ...Object.values(depthMap));
+// Assign depth to unreachable nodes
+graphData.nodes.forEach(n => {{
+    if (depthMap[n.id] === undefined) depthMap[n.id] = maxDepth + 1;
+}});
+
+let currentLayout = "force";
+
 const simulation = d3.forceSimulation(graphData.nodes)
     .force("link", d3.forceLink(graphData.links).id(d => d.id).distance(120))
     .force("charge", d3.forceManyBody().strength(-300))
     .force("center", d3.forceCenter(width / 2, height / 2))
     .force("collision", d3.forceCollide().radius(20));
+
+function setLayout(mode) {{
+    currentLayout = mode;
+    document.querySelectorAll("[id^=layout-]").forEach(b => b.classList.remove("active"));
+    document.getElementById("layout-" + mode).classList.add("active");
+
+    // Clear all pins
+    graphData.nodes.forEach(d => {{ d.fx = null; d.fy = null; }});
+
+    if (mode === "force") {{
+        simulation
+            .force("center", d3.forceCenter(width / 2, height / 2))
+            .force("charge", d3.forceManyBody().strength(-300))
+            .force("x", null)
+            .force("y", null);
+    }} else if (mode === "hierarchical") {{
+        const layerH = height / (maxDepth + 3);
+        // Count nodes per depth for horizontal spread
+        const perDepth = {{}};
+        graphData.nodes.forEach(n => {{
+            const d = depthMap[n.id];
+            perDepth[d] = (perDepth[d] || 0) + 1;
+        }});
+        const depthIdx = {{}};
+        graphData.nodes.forEach(n => {{
+            const d = depthMap[n.id];
+            depthIdx[d] = (depthIdx[d] || 0) + 1;
+            const count = perDepth[d];
+            const spacing = width / (count + 1);
+            n.fx = spacing * depthIdx[d];
+            n.fy = layerH * (d + 1);
+        }});
+        simulation
+            .force("center", null)
+            .force("charge", null)
+            .force("x", null)
+            .force("y", null);
+    }} else if (mode === "radial") {{
+        const maxR = Math.min(width, height) / 2 - 60;
+        const perDepth = {{}};
+        graphData.nodes.forEach(n => {{
+            const d = depthMap[n.id];
+            perDepth[d] = (perDepth[d] || 0) + 1;
+        }});
+        const depthIdx = {{}};
+        graphData.nodes.forEach(n => {{
+            const d = depthMap[n.id];
+            depthIdx[d] = (depthIdx[d] || 0) + 1;
+            const count = perDepth[d];
+            const r = d === 0 ? 0 : (d / (maxDepth + 1)) * maxR;
+            const angle = (2 * Math.PI * depthIdx[d]) / count - Math.PI / 2;
+            if (d === 0 && count === 1) {{
+                n.fx = width / 2;
+                n.fy = height / 2;
+            }} else {{
+                n.fx = width / 2 + r * Math.cos(angle);
+                n.fy = height / 2 + r * Math.sin(angle);
+            }}
+        }});
+        simulation
+            .force("center", null)
+            .force("charge", null)
+            .force("x", null)
+            .force("y", null);
+    }}
+
+    updatePinIndicators();
+    simulation.alpha(1).restart();
+    setTimeout(() => fitAll(), 600);
+}}
 
 const link = g.append("g")
     .selectAll("line")
