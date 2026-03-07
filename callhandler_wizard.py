@@ -953,13 +953,6 @@ def build_graph(call_handlers, interview_handlers, routing_rules, session, host,
         t_xfer_total += t_x
         t_greet_total += t_g
 
-        # Extract alternate contact extension from transfer rules (needed for Action=7)
-        alt_contact_ext = ""
-        for tr in transfer_rules:
-            if str(tr.get("RuleIndex", "")) == "Alternate":
-                alt_contact_ext = tr.get("Extension", "")
-                break
-
         # Menu entries
         has_timeout_key = False
         unlocked_keys = []
@@ -980,11 +973,13 @@ def build_graph(call_handlers, interview_handlers, routing_rules, session, host,
             # Take Message on a menu key is a misconfiguration for AA
             if action == ACTION_TAKE_MSG:
                 nodes[oid]["warnings"].append(f"Key {key} action is Take Message")
+            # Action=7 has TransferNumber on the menu entry itself
+            entry_xfer_num = entry.get("TransferNumber", "")
             _add_route_edge(nodes, edges, oid, action,
                 target_id,
                 entry.get("TargetConversation", ""),
                 f"Key {key}", dir_handler_map=dir_handler_map,
-                alt_contact_ext=alt_contact_ext, extension_map=ext_map)
+                alt_contact_ext=entry_xfer_num, extension_map=ext_map)
         # Check for missing timeout handler (no * key configured)
         active_keys = [e for e in menu_entries if str(e.get("Action", "0")) != ACTION_IGNORE]
         if active_keys and not has_timeout_key:
@@ -4861,7 +4856,9 @@ def cmd_handler(args):
             key = me.get("TouchtoneKey", "?")
             action = me.get("Action", "?")
             target = me.get("TargetHandlerObjectId", "")
-            print(f"  Key {key}: Action={action} Target={target or 'N/A'}")
+            xfer_num = me.get("TransferNumber", "")
+            extra = f" TransferNumber={xfer_num}" if xfer_num else ""
+            print(f"  Key {key}: Action={action} Target={target or 'N/A'}{extra}")
 
         if args.raw:
             print("\n--- Raw Handler JSON ---")
