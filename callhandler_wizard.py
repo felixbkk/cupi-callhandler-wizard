@@ -401,6 +401,47 @@ def greeting_audio_url(host, handler_id, greeting_type, language_code="1033"):
     )
 
 
+def download_audio_files(session, nodes, site_dir):
+    """Download all greeting audio WAV files into site_dir/audio/.
+
+    Rewrites each node's audio[].url to the local relative path.
+    Files are named: HandlerName - GreetingType.wav
+    """
+    audio_dir = os.path.join(site_dir, "audio")
+    os.makedirs(audio_dir, exist_ok=True)
+    total = sum(len(n.get("audio", [])) for n in nodes)
+    if not total:
+        return
+    downloaded = 0
+    failed = 0
+    for node in nodes:
+        handler_name = re.sub(r'[^\w\s\-]', '', node.get("name", "unknown")).strip()
+        for a in node.get("audio", []):
+            remote_url = a["url"]
+            greeting = a.get("greeting", "greeting")
+            filename = f"{handler_name} - {greeting}.wav"
+            # Sanitize for filesystem
+            filename = re.sub(r'[<>:"/\\|?*]', '_', filename)
+            local_path = os.path.join(audio_dir, filename)
+            try:
+                resp = session.get(remote_url, verify=False, timeout=API_TIMEOUT, stream=True)
+                if resp.status_code == 200:
+                    with open(local_path, "wb") as f:
+                        for chunk in resp.iter_content(8192):
+                            f.write(chunk)
+                    a["url"] = f"audio/{filename}"
+                    downloaded += 1
+                else:
+                    failed += 1
+            except Exception:
+                failed += 1
+            print(f"  Audio: {downloaded + failed}/{total} {'downloaded' if not failed else f'({failed} failed)'}", end="\r")
+    result = f"  Audio: {downloaded} downloaded"
+    if failed:
+        result += f", {failed} failed"
+    print(f"{result}{' ' * 20}")
+
+
 _HANDLER_TYPE_MAP = {"3": "callhandler", "5": "interview", "6": "directory"}
 _RULE_TYPES = {"1": "Direct", "2": "Forwarded", "3": "Both"}
 
@@ -1278,7 +1319,8 @@ function showDetails(d) {{
     if (d.audio && d.audio.length) {{
         html += '<h3 style="margin-top:12px;">Audio</h3>';
         d.audio.forEach(a => {{
-            html += '<div class="detail-row" style="padding:2px 0;"><a href="' + esc(a.url) + '" target="_blank" style="color:#1abc9c; font-size:12px; text-decoration:none;">&#9835; ' + esc(a.greeting) + ' greeting</a></div>';
+            html += '<div class="detail-row" style="padding:4px 0;"><span style="color:#1abc9c; font-size:12px;">&#9835; ' + esc(a.greeting) + '</span><br>' +
+                '<audio controls preload="none" style="width:100%; height:28px; margin-top:2px;"><source src="' + esc(a.url) + '" type="audio/wav"></audio></div>';
         }});
     }}
 
@@ -1663,7 +1705,8 @@ function renderTable() {{
 
         const audioList = n.audio || [];
         const audioHtml = audioList.length
-            ? audioList.map(a => '<a href="' + esc(a.url) + '" target="_blank" class="audio-link">' + esc(a.greeting) + '</a>' + schedTag(a.schedule)).join("<br>")
+            ? audioList.map(a => '<span class="audio-link">' + esc(a.greeting) + '</span>' + schedTag(a.schedule) +
+                '<br><audio controls preload="none" style="width:180px; height:24px;"><source src="' + esc(a.url) + '" type="audio/wav"></audio>').join("<br>")
             : '<span class="muted">&mdash;</span>';
 
         // Schedule name for handlers, conditions for routing rules
@@ -1753,7 +1796,8 @@ function renderCallFlowTrees(activeEdges) {{
             if (!node || !node.audio) return [];
             if (!node.audio.length) return [];
             const prefix = "  ".repeat(indent);
-            return node.audio.map(a => prefix + '<a href="' + esc(a.url) + '" target="_blank" class="audio-link">&#9835; ' + esc(a.greeting) + ' greeting</a>' + schedTag(a.schedule));
+            return node.audio.map(a => prefix + '<span class="audio-link">&#9835; ' + esc(a.greeting) + ' greeting</span>' + schedTag(a.schedule) +
+                '<br>' + prefix + '<audio controls preload="none" style="width:180px; height:24px;"><source src="' + esc(a.url) + '" type="audio/wav"></audio>');
         }}
 
         let lines = [];
@@ -2262,9 +2306,10 @@ function createCard(node, isEntry) {{
             const row = document.createElement("div");
             row.className = "audio-row";
             const gUrl = greetingUrl(node.id, a.greeting);
-            row.innerHTML = '&#9835; <a href="' + esc(a.url) + '" target="_blank" class="audio-badge" title="Play audio">' + esc(a.greeting) + ' greeting</a>' +
+            row.innerHTML = '&#9835; <span class="audio-badge">' + esc(a.greeting) + ' greeting</span>' +
                 (gUrl ? ' <a href="' + esc(gUrl) + '" target="_blank" style="color:#888; font-size:10px; text-decoration:none;" title="Edit in Unity">&#9881;</a>' : '') +
-                schedTag(a.schedule);
+                schedTag(a.schedule) +
+                '<br><audio controls preload="none" style="width:100%; height:28px; margin-top:2px;"><source src="' + esc(a.url) + '" type="audio/wav"></audio>';
             card.appendChild(row);
         }});
     }}
@@ -3107,6 +3152,10 @@ def cmd_generate(args):
         print(f"\nGraph: {len(nodes)} nodes, {len(edges)} edges, {audio_count} audio greetings")
         for cls, count in sorted(classifications.items()):
             print(f"  {cls}: {count}")
+
+        if audio_count:
+            print("\nDownloading greeting audio files...")
+            download_audio_files(session, nodes, site_dir)
 
         d3_local = copy_d3(site_dir)
 
