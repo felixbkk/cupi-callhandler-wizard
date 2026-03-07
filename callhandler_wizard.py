@@ -13,6 +13,7 @@ import platform
 import re
 import subprocess
 import sys
+from collections import deque
 from datetime import datetime
 from urllib.parse import urlparse
 
@@ -683,9 +684,9 @@ def build_graph(call_handlers, interview_handlers, routing_rules, session, host,
     def bfs_reachable(start_nodes, edge_filter=None):
         """Return set of all node IDs reachable from start_nodes."""
         visited = set()
-        queue = list(start_nodes)
+        queue = deque(start_nodes)
         while queue:
-            nid = queue.pop(0)
+            nid = queue.popleft()
             if nid in visited:
                 continue
             visited.add(nid)
@@ -1300,10 +1301,10 @@ tr:hover {{ background: #16213e; }}
 <h2>Call Flow Schedule View</h2>
 <div class="schedule-bar">
 <span class="schedule-label">Active schedule:</span>
-<button class="schedule-btn active" onclick="setSchedule('standard')">Standard</button>
-<button class="schedule-btn" onclick="setSchedule('offhours')">Off Hours</button>
-<button class="schedule-btn" onclick="setSchedule('holiday')">Holiday</button>
-<button class="schedule-btn" onclick="setSchedule('all')">All (raw)</button>
+<button class="schedule-btn active" data-schedule="standard" onclick="setSchedule('standard')">Standard</button>
+<button class="schedule-btn" data-schedule="offhours" onclick="setSchedule('offhours')">Off Hours</button>
+<button class="schedule-btn" data-schedule="holiday" onclick="setSchedule('holiday')">Holiday</button>
+<button class="schedule-btn" data-schedule="all" onclick="setSchedule('all')">All (raw)</button>
 </div>
 
 <h2>Call Flow Trees</h2>
@@ -1384,9 +1385,7 @@ function audioMatchesSchedule(a) {{
 function setSchedule(mode) {{
     activeSchedule = mode;
     document.querySelectorAll(".schedule-btn").forEach(btn => {{
-        btn.classList.toggle("active", btn.textContent.toLowerCase().replace(/[^a-z]/g, "") === mode ||
-            (mode === "offhours" && btn.textContent === "Off Hours") ||
-            (mode === "all" && btn.textContent === "All (raw)"));
+        btn.classList.toggle("active", btn.dataset.schedule === mode);
     }});
     renderTable();
 }}
@@ -1807,88 +1806,90 @@ def cmd_generate(args):
     log_path = os.path.join(site_dir, "run.log")
     tee = TeeLogger(log_path)
     sys.stdout = tee
-    print(f"Log: {log_path}")
-    print(f"Site: {site_id}")
-    print(f"Host: {host}")
-    print(f"User: {args.user}")
-    print(f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print()
-
     try:
-        call_handlers = fetch_call_handlers(session, host)
-        interview_handlers = fetch_interview_handlers(session, host)
-        directory_handlers = fetch_directory_handlers(session, host)
-        routing_rules = fetch_routing_rules(session, host)
-    except requests.exceptions.ConnectionError as e:
-        print(f"Error: Could not connect to {host}: {e}")
-        sys.exit(1)
-    except requests.exceptions.HTTPError as e:
-        print(f"Error: API request failed: {e}")
-        sys.exit(1)
+        print(f"Log: {log_path}")
+        print(f"Site: {site_id}")
+        print(f"Host: {host}")
+        print(f"User: {args.user}")
+        print(f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        print()
 
-    # Non-critical data — continue if endpoints are unavailable
-    try:
-        holiday_schedules = fetch_holiday_schedules(session, host)
-    except (requests.exceptions.HTTPError, requests.exceptions.ConnectionError) as e:
-        print(f"  Warning: Could not fetch holiday schedules: {e}")
-        holiday_schedules = []
+        try:
+            call_handlers = fetch_call_handlers(session, host)
+            interview_handlers = fetch_interview_handlers(session, host)
+            directory_handlers = fetch_directory_handlers(session, host)
+            routing_rules = fetch_routing_rules(session, host)
+        except requests.exceptions.ConnectionError as e:
+            print(f"Error: Could not connect to {host}: {e}")
+            sys.exit(1)
+        except requests.exceptions.HTTPError as e:
+            print(f"Error: API request failed: {e}")
+            sys.exit(1)
 
-    try:
-        schedules = fetch_schedules(session, host)
-    except (requests.exceptions.HTTPError, requests.exceptions.ConnectionError) as e:
-        print(f"  Warning: Could not fetch schedules: {e}")
-        schedules = []
+        # Non-critical data — continue if endpoints are unavailable
+        try:
+            holiday_schedules = fetch_holiday_schedules(session, host)
+        except (requests.exceptions.HTTPError, requests.exceptions.ConnectionError) as e:
+            print(f"  Warning: Could not fetch holiday schedules: {e}")
+            holiday_schedules = []
 
-    try:
-        schedule_sets = fetch_schedule_sets(session, host)
-    except (requests.exceptions.HTTPError, requests.exceptions.ConnectionError) as e:
-        print(f"  Warning: Could not fetch schedule sets: {e}")
-        schedule_sets = []
+        try:
+            schedules = fetch_schedules(session, host)
+        except (requests.exceptions.HTTPError, requests.exceptions.ConnectionError) as e:
+            print(f"  Warning: Could not fetch schedules: {e}")
+            schedules = []
 
-    # Build schedule set OID -> display name lookup
-    schedule_set_map = {s["ObjectId"]: s.get("DisplayName", "") for s in schedule_sets}
+        try:
+            schedule_sets = fetch_schedule_sets(session, host)
+        except (requests.exceptions.HTTPError, requests.exceptions.ConnectionError) as e:
+            print(f"  Warning: Could not fetch schedule sets: {e}")
+            schedule_sets = []
 
-    print(f"\nFound {len(call_handlers)} call handlers, "
-          f"{len(interview_handlers)} interview handlers, "
-          f"{len(directory_handlers)} directory handlers, "
-          f"{len(routing_rules)} routing rules, "
-          f"{len(holiday_schedules)} holiday schedules, "
-          f"{len(schedules)} schedules, "
-          f"{len(schedule_sets)} schedule sets")
+        # Build schedule set OID -> display name lookup
+        schedule_set_map = {s["ObjectId"]: s.get("DisplayName", "") for s in schedule_sets}
 
-    print("\nBuilding graph (fetching menu entries, transfer rules, greetings, rule conditions)...")
-    nodes, edges = build_graph(call_handlers, interview_handlers, routing_rules, session, host,
-                               schedule_set_map=schedule_set_map,
-                               directory_handlers=directory_handlers)
+        print(f"\nFound {len(call_handlers)} call handlers, "
+              f"{len(interview_handlers)} interview handlers, "
+              f"{len(directory_handlers)} directory handlers, "
+              f"{len(routing_rules)} routing rules, "
+              f"{len(holiday_schedules)} holiday schedules, "
+              f"{len(schedules)} schedules, "
+              f"{len(schedule_sets)} schedule sets")
 
-    # Summary
-    classifications = {}
-    for n in nodes:
-        c = n["classification"]
-        classifications[c] = classifications.get(c, 0) + 1
+        print("\nBuilding graph (fetching menu entries, transfer rules, greetings, rule conditions)...")
+        nodes, edges = build_graph(call_handlers, interview_handlers, routing_rules, session, host,
+                                   schedule_set_map=schedule_set_map,
+                                   directory_handlers=directory_handlers)
 
-    print(f"\nGraph: {len(nodes)} nodes, {len(edges)} edges")
-    for cls, count in sorted(classifications.items()):
-        print(f"  {cls}: {count}")
+        # Summary
+        classifications = {}
+        for n in nodes:
+            c = n["classification"]
+            classifications[c] = classifications.get(c, 0) + 1
 
-    d3_local = download_d3(site_dir)
+        print(f"\nGraph: {len(nodes)} nodes, {len(edges)} edges")
+        for cls, count in sorted(classifications.items()):
+            print(f"  {cls}: {count}")
 
-    map_path = os.path.join(site_dir, "callhandler_map.html")
-    report_path = os.path.join(site_dir, "callhandler_report.html")
+        d3_local = download_d3(site_dir)
 
-    print(f"\nGenerating {map_path}...")
-    html = generate_html(nodes, edges, d3_local=d3_local)
-    with open(map_path, "w", encoding="utf-8") as f:
-        f.write(html)
+        map_path = os.path.join(site_dir, "callhandler_map.html")
+        report_path = os.path.join(site_dir, "callhandler_report.html")
 
-    print(f"Generating {report_path}...")
-    table_html = generate_table_html(nodes, edges, holiday_schedules, schedules)
-    with open(report_path, "w", encoding="utf-8") as f:
-        f.write(table_html)
+        print(f"\nGenerating {map_path}...")
+        html = generate_html(nodes, edges, d3_local=d3_local)
+        with open(map_path, "w", encoding="utf-8") as f:
+            f.write(html)
 
-    print(f"\nDone! Reports written to {site_dir}/")
-    print(f"  Open {map_path} (graph) or {report_path} (table) in a browser.")
-    tee.close()
+        print(f"Generating {report_path}...")
+        table_html = generate_table_html(nodes, edges, holiday_schedules, schedules)
+        with open(report_path, "w", encoding="utf-8") as f:
+            f.write(table_html)
+
+        print(f"\nDone! Reports written to {site_dir}/")
+        print(f"  Open {map_path} (graph) or {report_path} (table) in a browser.")
+    finally:
+        tee.close()
 
 
 def cmd_query(args):
@@ -2205,6 +2206,7 @@ def cmd_orphans(args):
         by_class.setdefault(n["classification"], []).append(n)
 
     total_handlers = sum(len(v) for v in by_class.values())
+    node_map = {n["id"]: n for n in nodes}
 
     print(f"\n{'='*70}")
     print(f"ORPHAN ANALYSIS — {total_handlers} call/interview handlers")
@@ -2224,7 +2226,6 @@ def cmd_orphans(args):
     unreachable = by_class.get("unreachable", [])
     print(f"\n  UNREACHABLE ({len(unreachable)}) — have edges but no path from any routing rule:")
     if unreachable:
-        node_map = {n["id"]: n for n in nodes}
         for n in sorted(unreachable, key=lambda x: x["name"].lower()):
             ext = f" (ext {n['extension']})" if n["extension"] else ""
             out_edges = [e for e in edges if e["source"] == n["id"]]
@@ -2246,7 +2247,6 @@ def cmd_orphans(args):
     deadends = by_class.get("deadend", [])
     print(f"\n  DEAD ENDS ({len(deadends)}) — reachable but callers get stuck:")
     if deadends:
-        node_map = {n["id"]: n for n in nodes}
         for n in sorted(deadends, key=lambda x: x["name"].lower()):
             ext = f" (ext {n['extension']})" if n["extension"] else ""
             in_edges = [e for e in edges if e["target"] == n["id"]]
