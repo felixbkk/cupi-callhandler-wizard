@@ -116,8 +116,8 @@ def sanitize_dirname(name):
 
 
 def prepare_site_dir(site_id):
-    """Create reports/<ServerName>_YYYY-MM-DD/ directory."""
-    safe_name = sanitize_dirname(site_id)
+    """Create reports/<FriendlyName>_YYYY-MM-DD/ directory."""
+    safe_name = sanitize_dirname(friendly_site_name(site_id))
     timestamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
     run_dir = os.path.join("reports", f"{safe_name}_{timestamp}")
     os.makedirs(run_dir, exist_ok=True)
