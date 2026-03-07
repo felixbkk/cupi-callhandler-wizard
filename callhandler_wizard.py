@@ -643,6 +643,15 @@ marker {{ fill: #666; }}
 <h2>Call Handler Map</h2>
 <a href="callhandler_report.html" style="color:#1abc9c; font-size:13px;">Switch to Table Report &rarr;</a>
 <div class="controls">
+<h3>Navigation</h3>
+<div style="display:flex; gap:6px; flex-wrap:wrap;">
+<button class="toggle-btn" onclick="zoomIn()">Zoom In</button>
+<button class="toggle-btn" onclick="zoomOut()">Zoom Out</button>
+<button class="toggle-btn" onclick="fitAll()">Fit All</button>
+<button class="toggle-btn" onclick="unpinAll()">Unpin All</button>
+</div>
+</div>
+<div class="controls">
 <h3>Toggle Visibility</h3>
 <button class="toggle-btn active" data-class="orphan" onclick="toggleClass(this, \'orphan\')">Show True Orphans</button>
 <button class="toggle-btn active" data-class="unreachable" onclick="toggleClass(this, \'unreachable\')">Show Unreachable Subtrees</button>
@@ -729,9 +738,36 @@ const svg = d3.select("svg")
 
 const g = svg.append("g");
 
-svg.call(d3.zoom()
+const zoom = d3.zoom()
     .scaleExtent([0.1, 8])
-    .on("zoom", (event) => g.attr("transform", event.transform)));
+    .on("zoom", (event) => g.attr("transform", event.transform));
+svg.call(zoom);
+
+function zoomIn() {{
+    svg.transition().duration(300).call(zoom.scaleBy, 1.5);
+}}
+function zoomOut() {{
+    svg.transition().duration(300).call(zoom.scaleBy, 0.67);
+}}
+function fitAll() {{
+    const bounds = g.node().getBBox();
+    if (bounds.width === 0 || bounds.height === 0) return;
+    const pad = 40;
+    const scale = Math.min(
+        width / (bounds.width + pad * 2),
+        height / (bounds.height + pad * 2)
+    );
+    const tx = width / 2 - (bounds.x + bounds.width / 2) * scale;
+    const ty = height / 2 - (bounds.y + bounds.height / 2) * scale;
+    svg.transition().duration(500)
+        .call(zoom.transform, d3.zoomIdentity.translate(tx, ty).scale(scale));
+}}
+function unpinAll() {{
+    graphData.nodes.forEach(d => {{ d.fx = null; d.fy = null; }});
+    simulation.alphaTarget(0.3).restart();
+    setTimeout(() => simulation.alphaTarget(0), 500);
+    updatePinIndicators();
+}}
 
 svg.append("defs").append("marker")
     .attr("id", "arrowhead")
