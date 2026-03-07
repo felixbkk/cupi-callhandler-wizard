@@ -185,6 +185,7 @@ All HTML files are written to `reports/<SiteName>_<timestamp>/`. Pages are self-
 | `callhandler_map.html` | `generate_html` | D3.js (local copy or CDN) |
 | `callhandler_report.html` | `generate_table_html` | None (pure HTML/CSS/JS) |
 | `callflow.html` | `generate_callflow_html` | None (pure HTML/CSS/JS, supports deep linking) |
+| `callflow_trees.html` | `generate_flow_trees_html` | None (text-based BFS trees, schedule filtering) |
 | `schedules.html` | `generate_schedules_html` | None |
 | `test_times.html` | `generate_test_times_html` | None |
 | `audit.html` | `generate_audit_html` | None (categorized audit findings) |

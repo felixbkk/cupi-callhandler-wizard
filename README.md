@@ -30,8 +30,9 @@ Output is written to `reports/<SiteName>_<timestamp>/` containing:
 |------|-------------|
 | `index.html` | Landing page with links to all reports |
 | `callhandler_map.html` | Interactive D3.js force-directed graph |
-| `callhandler_report.html` | Table report with call flow trees, debug tools, audio playback |
-| `callflow.html` | Dedicated call flow view with deep linking |
+| `callhandler_report.html` | Searchable handler table with routing rules, debug tools, audio playback |
+| `callflow.html` | Interactive card-based call flow with deep linking |
+| `callflow_trees.html` | Text-based BFS call flow trees with schedule filtering |
 | `schedules.html` | Business hour and holiday schedule details |
 | `test_times.html` | Recommended test times for each day of the week |
 | `audit.html` | Categorized audit findings: warnings, holidays, classification, audio |

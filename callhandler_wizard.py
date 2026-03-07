@@ -1068,6 +1068,7 @@ NAV_PAGES = [
     ("index.html", "Home"),
     ("callhandler_map.html", "Graph"),
     ("callflow.html", "Call Flow"),
+    ("callflow_trees.html", "Flow Trees"),
     ("callhandler_report.html", "Handlers"),
     ("schedules.html", "Schedules"),
     ("test_times.html", "Test Times"),
@@ -1945,12 +1946,6 @@ tr:hover {{ background: #16213e; }}
 .schedule-btn.active {{ background: #0f3460; border-color: #e94560; color: #fff; }}
 .schedule-label {{ font-size: 13px; color: #888; align-self: center; margin-right: 8px; }}
 .diff-highlight {{ background: #2a1a3e; }}
-.flow-tree {{ background: #16213e; border: 1px solid #0f3460; border-radius: 6px; padding: 16px; margin-bottom: 16px; font-family: monospace; font-size: 13px; line-height: 1.6; white-space: pre; overflow-x: auto; }}
-.flow-tree .flow-root {{ color: #2ecc71; font-weight: 700; }}
-.flow-tree .flow-handler {{ color: #3498db; }}
-.flow-tree .flow-label {{ color: #e94560; }}
-.flow-tree .flow-muted {{ color: #555; }}
-.flow-tree .flow-visited {{ color: #555; font-style: italic; }}
 .sched-tag {{ display: inline-block; padding: 1px 6px; border-radius: 8px; font-size: 10px; font-weight: 600; margin-left: 4px; }}
 .sched-tag.offhours {{ background: #5b3a1e; color: #f39c12; }}
 .sched-tag.holiday {{ background: #4a1a2e; color: #e74c3c; }}
@@ -1967,14 +1962,6 @@ tr:hover {{ background: #16213e; }}
 <div id="stats" class="stats"></div>
 <div id="summary" class="summary"></div>
 
-<nav class="toc">
-<span class="toc-label">Jump to:</span>
-<a href="#schedule-view">Schedule View</a>
-<a href="#flow-trees">Call Flow Trees</a>
-<a href="#handlers">Handlers &amp; Routing</a>
-</nav>
-
-<h2 id="schedule-view">Call Flow Schedule View</h2>
 <div class="schedule-bar">
 <span class="schedule-label">Active schedule:</span>
 <button class="schedule-btn active" data-schedule="standard" onclick="setSchedule('standard')">Standard</button>
@@ -1982,9 +1969,6 @@ tr:hover {{ background: #16213e; }}
 <button class="schedule-btn" data-schedule="holiday" onclick="setSchedule('holiday')">Holiday</button>
 <button class="schedule-btn" data-schedule="all" onclick="setSchedule('all')">All (raw)</button>
 </div>
-
-<div class="section-header"><h2 id="flow-trees">Call Flow Trees</h2><button class="copy-btn" onclick="copyFlowTrees(this)">Copy</button></div>
-<div id="callFlowTrees"></div>
 
 <div class="section-header"><h2 id="handlers">Call Handlers &amp; Routing</h2><button class="copy-btn" onclick="copyHandlerTable(this)">Copy as Markdown</button></div>
 <div class="filter-bar">
@@ -2177,100 +2161,6 @@ function renderTable() {{
             .map(c => '<span class="summary-badge" style="background:' + classColors[c] + '">' + classLabels[c] + ': ' + counts[c] + '</span>')
             .join("");
 
-    renderCallFlowTrees(activeEdges);
-}}
-
-function renderCallFlowTrees(activeEdges) {{
-    const container = document.getElementById("callFlowTrees");
-    // Build adjacency: source -> [{{label, target, schedule}}]
-    const adj = {{}};
-    activeEdges.forEach(e => {{
-        (adj[e.source] = adj[e.source] || []).push({{ label: e.label, target: e.target, schedule: e.schedule }});
-    }});
-    // Sort edges: Key entries first (by key), then After:, then Xfer:
-    function edgeSortKey(e) {{
-        if (e.label.startsWith("Key ")) return "0_" + e.label;
-        if (e.label.startsWith("After:")) return "1_" + e.label;
-        return "2_" + e.label;
-    }}
-    Object.values(adj).forEach(edges => edges.sort((a, b) => edgeSortKey(a).localeCompare(edgeSortKey(b))));
-
-    // Find routing rules that connect to call handlers
-    const roots = data.nodes.filter(n => n.type === "routingrule" && (adj[n.id] || []).length > 0);
-    // Sort: routing rules targeting the primary root come first
-    const primaryId = (data.nodes.find(n => n.primary) || {{}}).id;
-    roots.sort((a, b) => {{
-        const aTarget = (adj[a.id] || [])[0];
-        const bTarget = (adj[b.id] || [])[0];
-        const aHitsPrimary = aTarget && aTarget.target === primaryId ? 0 : 1;
-        const bHitsPrimary = bTarget && bTarget.target === primaryId ? 0 : 1;
-        return aHitsPrimary - bHitsPrimary;
-    }});
-    if (!roots.length) {{
-        container.innerHTML = '<p class="muted">No routing rules with connections found.</p>';
-        return;
-    }}
-
-    let html = "";
-    roots.forEach(root => {{
-        const target = (adj[root.id] || [])[0];
-        if (!target) return;
-        const targetNode = nodeMap[target.target];
-        if (!targetNode) return;
-
-        function audioLinks(node, indent) {{
-            if (!node || !node.audio) return [];
-            if (!node.audio.length) return [];
-            const prefix = "  ".repeat(indent);
-            return node.audio.map(a => {{
-                let h = prefix + '<span class="audio-link">&#9835; ' + esc(a.greeting) + ' greeting</span>' + schedTag(a.schedule) +
-                    (a.enabled === false ? ' <span style="color:#e74c3c; font-size:10px;">(disabled)</span>' : '') +
-                    (a.systemDefault ? ' <span style="color:#e67e22; font-size:10px;">(system default)</span>' : '');
-                if (a.noAudio) {{
-                    h += ' <span style="color:#666; font-size:11px;">No audio file</span>';
-                }} else {{
-                    h += (a.codecWarning ? ' <span style="color:#e67e22; font-size:10px;">&#9888; ' + esc(a.codec) + '</span>' : '') +
-                        '<br>' + prefix + '<audio controls preload="none" onloadedmetadata="this.playbackRate=2.0" style="width:200px; height:32px; color-scheme:dark;"><source src="' + esc(a.url) + '" type="audio/wav"></audio>';
-                }}
-                return h;
-            }});
-        }}
-
-        let lines = [];
-        // Show conditions on the root line
-        const conds = root.conditions || [];
-        const condStr = conds.length
-            ? ' <span class="flow-muted">[' + conds.map(c => esc(c.param) + " " + esc(c.op) + " " + esc(c.value)).join(", ") + ']</span>'
-            : "";
-        lines.push('<span class="flow-root">' + esc(root.name) + '</span>' + condStr + ' -> <span class="flow-handler">' + esc(targetNode.name) + (targetNode.extension ? " (" + esc(targetNode.extension) + ")" : "") + '</span>' + (targetNode.scheduleName ? ' <span class="flow-muted">[' + esc(targetNode.scheduleName) + ']</span>' : ""));
-        lines.push(...audioLinks(targetNode, 1));
-
-        // BFS tree with depth tracking
-        const visited = new Set([root.id]);
-        function walk(nodeId, indent) {{
-            if (!adj[nodeId]) return;
-            adj[nodeId].forEach(edge => {{
-                const tgt = nodeMap[edge.target];
-                const name = tgt ? tgt.name : "?";
-                const ext = tgt && tgt.extension ? " (" + esc(tgt.extension) + ")" : "";
-                const prefix = "  ".repeat(indent);
-                if (visited.has(edge.target)) {{
-                    lines.push(prefix + '<span class="flow-label">[' + esc(edge.label) + ']</span> -> <span class="flow-visited">' + esc(name) + ext + ' (see above)</span>' + schedTag(edge.schedule));
-                    return;
-                }}
-                visited.add(edge.target);
-                lines.push(prefix + '<span class="flow-label">[' + esc(edge.label) + ']</span> -> <span class="flow-handler">' + esc(name) + ext + '</span>' + schedTag(edge.schedule));
-                lines.push(...audioLinks(tgt, indent + 1));
-                walk(edge.target, indent + 1);
-            }});
-        }}
-        visited.add(target.target);
-        walk(target.target, 1);
-
-        html += '<div class="flow-tree">' + lines.join("\\n") + '</div>';
-    }});
-
-    container.innerHTML = html;
 }}
 
 // Initial render
@@ -2281,12 +2171,6 @@ function flashBtn(btn, msg) {{
     const orig = btn.textContent;
     btn.textContent = msg || "Copied!";
     setTimeout(() => btn.textContent = orig, 1500);
-}}
-
-function copyFlowTrees(btn) {{
-    const el = document.getElementById("callFlowTrees");
-    const text = el.innerText;
-    navigator.clipboard.writeText(text).then(() => flashBtn(btn));
 }}
 
 function copyHandlerTable(btn) {{
@@ -2474,6 +2358,209 @@ function copyDebugOutput() {{
 &bull; Dump All Data &mdash; export the complete JSON dataset (nodes, edges, schedules, holidays)</pre>
 </div>
 {floating_nav_html("callhandler_report.html")}
+</body>
+</html>'''
+
+
+def generate_flow_trees_html(nodes, edges, site_name="", host=""):
+    title_prefix = f"{site_name} — " if site_name else ""
+    report_data = json.dumps({{"nodes": nodes, "edges": edges, "host": host, "siteName": site_name}})
+    return f'''<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{title_prefix}Call Flow Trees</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='12' fill='%231a1a2e'/><path d='M16 20a4 4 0 014-4h8a4 4 0 014 4v24a4 4 0 01-4 4h-8a4 4 0 01-4-4z' fill='%23e94560'/><circle cx='24' cy='42' r='2' fill='%231a1a2e'/><path d='M36 28h10m0 0l-4-4m4 4l-4 4' stroke='%232ecc71' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/><path d='M36 38h10m0 0l-4-4m4 4l-4 4' stroke='%233498db' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/></svg>">
+<style>
+* {{ margin: 0; padding: 0; box-sizing: border-box; }}
+body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #1a1a2e; color: #e0e0e0; padding: 24px; }}
+h1 {{ color: #e94560; margin-bottom: 4px; }}
+.subtitle {{ color: #888; font-size: 14px; margin-bottom: 16px; }}
+h2 {{ color: #e94560; margin: 24px 0 10px 0; font-size: 18px; border-bottom: 1px solid #0f3460; padding-bottom: 6px; }}
+.schedule-bar {{ display: flex; gap: 4px; margin: 16px 0; }}
+.schedule-btn {{ padding: 8px 16px; border: 2px solid #0f3460; background: #16213e; color: #e0e0e0; cursor: pointer; border-radius: 4px; font-size: 13px; font-weight: 600; transition: all 0.2s; }}
+.schedule-btn:hover {{ border-color: #e94560; }}
+.schedule-btn.active {{ background: #0f3460; border-color: #e94560; color: #fff; }}
+.schedule-label {{ font-size: 13px; color: #888; align-self: center; margin-right: 8px; }}
+.flow-tree {{ background: #16213e; border: 1px solid #0f3460; border-radius: 6px; padding: 16px; margin-bottom: 16px; font-family: monospace; font-size: 13px; line-height: 1.6; white-space: pre; overflow-x: auto; }}
+.flow-tree .flow-root {{ color: #2ecc71; font-weight: 700; }}
+.flow-tree .flow-handler {{ color: #3498db; }}
+.flow-tree .flow-label {{ color: #e94560; }}
+.flow-tree .flow-muted {{ color: #555; }}
+.flow-tree .flow-visited {{ color: #555; font-style: italic; }}
+.sched-tag {{ display: inline-block; padding: 1px 6px; border-radius: 8px; font-size: 10px; font-weight: 600; margin-left: 4px; }}
+.sched-tag.offhours {{ background: #5b3a1e; color: #f39c12; }}
+.sched-tag.holiday {{ background: #4a1a2e; color: #e74c3c; }}
+.sched-tag.standard {{ background: #1a3a2e; color: #2ecc71; }}
+.sched-tag.alternate {{ background: #2a1a4e; color: #9b59b6; }}
+.audio-link {{ color: #1abc9c; text-decoration: none; font-size: 12px; }}
+.muted {{ color: #555; }}
+.section-header {{ display: flex; align-items: center; gap: 12px; }}
+.section-header h2 {{ margin: 0; }}
+.copy-btn {{ padding: 4px 10px; border: 1px solid #0f3460; background: #16213e; color: #888; cursor: pointer; border-radius: 3px; font-size: 11px; transition: all 0.2s; }}
+.copy-btn:hover {{ color: #e0e0e0; border-color: #e94560; }}
+.back-to-top {{ position: fixed; bottom: 16px; left: 16px; padding: 8px 14px; background: #0f3460; border: 1px solid #0f3460; color: #e0e0e0; cursor: pointer; border-radius: 4px; font-size: 12px; z-index: 100; text-decoration: none; }}
+.back-to-top:hover {{ background: #1a1a4e; border-color: #e94560; }}
+</style>
+</head>
+<body>
+<h1>{title_prefix}Call Flow Trees</h1>
+<p class="subtitle">Text-based BFS trees from each routing rule entry point. Switch schedules to see how routing changes by time of day.</p>
+
+<div class="schedule-bar">
+<span class="schedule-label">Active schedule:</span>
+<button class="schedule-btn active" data-schedule="standard" onclick="setSchedule('standard')">Standard</button>
+<button class="schedule-btn" data-schedule="offhours" onclick="setSchedule('offhours')">Off Hours</button>
+<button class="schedule-btn" data-schedule="holiday" onclick="setSchedule('holiday')">Holiday</button>
+<button class="schedule-btn" data-schedule="all" onclick="setSchedule('all')">All (raw)</button>
+</div>
+
+<div class="section-header"><h2 id="trees">Trees</h2><button class="copy-btn" onclick="copyFlowTrees(this)">Copy as Text</button></div>
+<div id="callFlowTrees"></div>
+
+<script>
+const data = {report_data};
+let activeSchedule = "standard";
+
+const nodeMap = {{}};
+data.nodes.forEach(n => nodeMap[n.id] = n);
+
+function esc(s) {{
+    const d = document.createElement("div");
+    d.textContent = s || "";
+    return d.innerHTML;
+}}
+
+function edgeMatchesSchedule(e) {{
+    if (activeSchedule === "all") return true;
+    return e.schedule === "always" || e.schedule === activeSchedule;
+}}
+
+function audioMatchesSchedule(a) {{
+    if (activeSchedule === "all") return true;
+    return a.schedule === "always" || a.schedule === activeSchedule;
+}}
+
+const schedLabels = {{ standard: "Standard", offhours: "Off Hours", holiday: "Holiday", alternate: "Alternate" }};
+function schedTag(sched) {{
+    if (!sched || sched === "always") return "";
+    if (activeSchedule !== "all" && sched === activeSchedule) return "";
+    return '<span class="sched-tag ' + sched + '">' + (schedLabels[sched] || sched) + '</span>';
+}}
+
+function setSchedule(mode) {{
+    activeSchedule = mode;
+    document.querySelectorAll(".schedule-btn").forEach(btn => {{
+        btn.classList.toggle("active", btn.dataset.schedule === mode);
+    }});
+    renderTrees();
+}}
+
+function renderTrees() {{
+    const activeEdges = data.edges.filter(edgeMatchesSchedule);
+    const container = document.getElementById("callFlowTrees");
+    const adj = {{}};
+    activeEdges.forEach(e => {{
+        (adj[e.source] = adj[e.source] || []).push({{ label: e.label, target: e.target, schedule: e.schedule }});
+    }});
+    function edgeSortKey(e) {{
+        if (e.label.startsWith("Key ")) return "0_" + e.label;
+        if (e.label.startsWith("After:")) return "1_" + e.label;
+        return "2_" + e.label;
+    }}
+    Object.values(adj).forEach(edges => edges.sort((a, b) => edgeSortKey(a).localeCompare(edgeSortKey(b))));
+
+    const roots = data.nodes.filter(n => n.type === "routingrule" && (adj[n.id] || []).length > 0);
+    const primaryId = (data.nodes.find(n => n.primary) || {{}}).id;
+    roots.sort((a, b) => {{
+        const aTarget = (adj[a.id] || [])[0];
+        const bTarget = (adj[b.id] || [])[0];
+        const aHitsPrimary = aTarget && aTarget.target === primaryId ? 0 : 1;
+        const bHitsPrimary = bTarget && bTarget.target === primaryId ? 0 : 1;
+        return aHitsPrimary - bHitsPrimary;
+    }});
+    if (!roots.length) {{
+        container.innerHTML = '<p class="muted">No routing rules with connections found for this schedule.</p>';
+        return;
+    }}
+
+    let html = "";
+    roots.forEach(root => {{
+        const target = (adj[root.id] || [])[0];
+        if (!target) return;
+        const targetNode = nodeMap[target.target];
+        if (!targetNode) return;
+
+        function audioLinks(node, indent) {{
+            if (!node || !node.audio) return [];
+            if (!node.audio.length) return [];
+            const prefix = "  ".repeat(indent);
+            return node.audio.filter(audioMatchesSchedule).map(a => {{
+                let h = prefix + '<span class="audio-link">&#9835; ' + esc(a.greeting) + ' greeting</span>' + schedTag(a.schedule) +
+                    (a.enabled === false ? ' <span style="color:#e74c3c; font-size:10px;">(disabled)</span>' : '') +
+                    (a.systemDefault ? ' <span style="color:#e67e22; font-size:10px;">(system default)</span>' : '');
+                if (a.noAudio) {{
+                    h += ' <span style="color:#666; font-size:11px;">No audio file</span>';
+                }} else {{
+                    h += (a.codecWarning ? ' <span style="color:#e67e22; font-size:10px;">&#9888; ' + esc(a.codec) + '</span>' : '') +
+                        '<br>' + prefix + '<audio controls preload="none" onloadedmetadata="this.playbackRate=2.0" style="width:200px; height:32px; color-scheme:dark;"><source src="' + esc(a.url) + '" type="audio/wav"></audio>';
+                }}
+                return h;
+            }});
+        }}
+
+        let lines = [];
+        const conds = root.conditions || [];
+        const condStr = conds.length
+            ? ' <span class="flow-muted">[' + conds.map(c => esc(c.param) + " " + esc(c.op) + " " + esc(c.value)).join(", ") + ']</span>'
+            : "";
+        lines.push('<span class="flow-root">' + esc(root.name) + '</span>' + condStr + ' -> <span class="flow-handler">' + esc(targetNode.name) + (targetNode.extension ? " (" + esc(targetNode.extension) + ")" : "") + '</span>' + (targetNode.scheduleName ? ' <span class="flow-muted">[' + esc(targetNode.scheduleName) + ']</span>' : ""));
+        lines.push(...audioLinks(targetNode, 1));
+
+        const visited = new Set([root.id]);
+        function walk(nodeId, indent) {{
+            if (!adj[nodeId]) return;
+            adj[nodeId].forEach(edge => {{
+                const tgt = nodeMap[edge.target];
+                const name = tgt ? tgt.name : "?";
+                const ext = tgt && tgt.extension ? " (" + esc(tgt.extension) + ")" : "";
+                const prefix = "  ".repeat(indent);
+                if (visited.has(edge.target)) {{
+                    lines.push(prefix + '<span class="flow-label">[' + esc(edge.label) + ']</span> -> <span class="flow-visited">' + esc(name) + ext + ' (see above)</span>' + schedTag(edge.schedule));
+                    return;
+                }}
+                visited.add(edge.target);
+                lines.push(prefix + '<span class="flow-label">[' + esc(edge.label) + ']</span> -> <span class="flow-handler">' + esc(name) + ext + '</span>' + schedTag(edge.schedule));
+                lines.push(...audioLinks(tgt, indent + 1));
+                walk(edge.target, indent + 1);
+            }});
+        }}
+        visited.add(target.target);
+        walk(target.target, 1);
+
+        html += '<div class="flow-tree">' + lines.join("\\n") + '</div>';
+    }});
+
+    container.innerHTML = html;
+}}
+
+renderTrees();
+
+function flashBtn(btn, msg) {{
+    const orig = btn.textContent;
+    btn.textContent = msg || "Copied!";
+    setTimeout(() => btn.textContent = orig, 1500);
+}}
+
+function copyFlowTrees(btn) {{
+    const el = document.getElementById("callFlowTrees");
+    const text = el.innerText;
+    navigator.clipboard.writeText(text).then(() => flashBtn(btn));
+}}
+</script>
+<a href="#" class="back-to-top">&uarr; Top</a>
+{floating_nav_html("callflow_trees.html")}
 </body>
 </html>'''
 
@@ -3721,9 +3808,13 @@ h1 {{ color: #e94560; font-size: 24px; margin-bottom: 8px; }}
 <h2>Graph View</h2>
 <p>Interactive D3.js force graph showing all handlers and their connections.</p>
 </a>
+<a href="callflow_trees.html" class="card">
+<h2>Flow Trees</h2>
+<p>Text-based call flow trees with schedule filtering. Easy to copy into documentation.</p>
+</a>
 <a href="callhandler_report.html" class="card">
 <h2>Handlers &amp; Routing</h2>
-<p>Call flow trees, handler table with routing rules, classifications, and debug tools.</p>
+<p>Searchable handler table with routing rules, classifications, and debug tools.</p>
 </a>
 <a href="schedules.html" class="card">
 <h2>Schedules</h2>
@@ -3977,6 +4068,11 @@ def cmd_generate(args):
         flow_html = generate_callflow_html(nodes, edges, site_name=site_name, host=host)
         with open(flow_path, "w", encoding="utf-8") as f:
             f.write(flow_html)
+
+        trees_path = os.path.join(site_dir, "callflow_trees.html")
+        trees_html = generate_flow_trees_html(nodes, edges, site_name=site_name, host=host)
+        with open(trees_path, "w", encoding="utf-8") as f:
+            f.write(trees_html)
 
         sched_html = generate_schedules_html(holiday_schedules, schedules, site_name=site_name, host=host, holiday_audit=holiday_audit)
         with open(sched_path, "w", encoding="utf-8") as f:
