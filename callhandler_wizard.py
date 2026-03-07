@@ -1465,7 +1465,7 @@ function renderTable() {{
     }});
 
     // Sort nodes
-    const typeOrder = {{ routingrule: 0, callhandler: 1, interview: 2, phone: 3 }};
+    const typeOrder = {{ callhandler: 0, directory: 1, interview: 2, routingrule: 3, phone: 4 }};
     const classOrder = {{ root: 0, normal: 1, deadend: 2, unreachable: 3, orphan: 4 }};
     const sorted = [...data.nodes].sort((a, b) =>
         (typeOrder[a.type] ?? 9) - (typeOrder[b.type] ?? 9) ||
@@ -1692,7 +1692,7 @@ function copyHandlerTable(btn) {{
     }});
     const headers = ["Name", "Extension", "Type", "Classification", "Schedule / Conditions", "Incoming", "Outgoing", "Object ID"];
     const rows = [headers.join(" | "), headers.map(() => "---").join(" | ")];
-    const typeOrder = {{ routingrule: 0, callhandler: 1, interview: 2, phone: 3 }};
+    const typeOrder = {{ callhandler: 0, directory: 1, interview: 2, routingrule: 3, phone: 4 }};
     const classOrder = {{ root: 0, normal: 1, deadend: 2, unreachable: 3, orphan: 4 }};
     const sorted = [...data.nodes].sort((a, b) =>
         (typeOrder[a.type] ?? 9) - (typeOrder[b.type] ?? 9) ||
