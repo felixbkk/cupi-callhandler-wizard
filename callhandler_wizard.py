@@ -854,7 +854,8 @@ marker {{ fill: #666; }}
 <a href="index.html" style="color:#1abc9c; font-size:13px;">Home</a> &nbsp;
 <a href="callflow.html" style="color:#1abc9c; font-size:13px;">Call Flow</a> &nbsp;
 <a href="callhandler_report.html" style="color:#1abc9c; font-size:13px;">Handlers &amp; Routing</a> &nbsp;
-<a href="schedules.html" style="color:#1abc9c; font-size:13px;">Schedules</a>
+<a href="schedules.html" style="color:#1abc9c; font-size:13px;">Schedules</a> &nbsp;
+<a href="test_times.html" style="color:#1abc9c; font-size:13px;">Test Times</a>
 <div class="controls">
 <h3>Layout</h3>
 <div style="display:flex; gap:6px; flex-wrap:wrap;">
@@ -897,14 +898,19 @@ const graphData = {graph_data};
 
 function adminUrl(node) {{
     if (!graphData.host || !node || !node.id) return "";
-    const paths = {{
-        callhandler: "/cuadmin/#/callmgmt/callhandlers/",
-        interview: "/cuadmin/#/callmgmt/interviewhandlers/",
-        directory: "/cuadmin/#/callmgmt/directoryhandlers/",
-        routingrule: "/cuadmin/#/callrouting/directroutingrules/",
+    const ops = {{
+        callhandler: "callhandler.do?op=read",
+        interview: "interviewhandler.do?op=read",
+        directory: "directoryhandler.do?op=read",
+        routingrule: "routingrule.do?op=read",
     }};
-    const p = paths[node.type];
-    return p ? graphData.host + p + node.id : "";
+    const op = ops[node.type];
+    return op ? graphData.host + "/cuadmin/" + op + "&objectId=" + node.id : "";
+}}
+
+function greetingUrl(handlerId, greetingType) {{
+    if (!graphData.host) return "";
+    return graphData.host + "/cuadmin/greeting.do?op=readCallhandler&objectId=" + handlerId + "&greetingType=" + encodeURIComponent(greetingType);
 }}
 
 const colorMap = {{
@@ -1495,7 +1501,8 @@ tr:hover {{ background: #16213e; }}
 <a href="index.html" style="color:#1abc9c; font-size:13px;">Home</a> &nbsp;
 <a href="callflow.html" style="color:#1abc9c; font-size:13px;">Call Flow</a> &nbsp;
 <a href="callhandler_map.html" style="color:#1abc9c; font-size:13px;">Graph View</a> &nbsp;
-<a href="schedules.html" style="color:#1abc9c; font-size:13px;">Schedules</a>
+<a href="schedules.html" style="color:#1abc9c; font-size:13px;">Schedules</a> &nbsp;
+<a href="test_times.html" style="color:#1abc9c; font-size:13px;">Test Times</a>
 <div id="stats" class="stats"></div>
 <div id="summary" class="summary"></div>
 
@@ -1567,14 +1574,19 @@ function esc(s) {{
 
 function adminUrl(node) {{
     if (!data.host || !node || !node.id) return "";
-    const paths = {{
-        callhandler: "/cuadmin/#/callmgmt/callhandlers/",
-        interview: "/cuadmin/#/callmgmt/interviewhandlers/",
-        directory: "/cuadmin/#/callmgmt/directoryhandlers/",
-        routingrule: "/cuadmin/#/callrouting/directroutingrules/",
+    const ops = {{
+        callhandler: "callhandler.do?op=read",
+        interview: "interviewhandler.do?op=read",
+        directory: "directoryhandler.do?op=read",
+        routingrule: "routingrule.do?op=read",
     }};
-    const p = paths[node.type];
-    return p ? data.host + p + node.id : "";
+    const op = ops[node.type];
+    return op ? data.host + "/cuadmin/" + op + "&objectId=" + node.id : "";
+}}
+
+function greetingUrl(handlerId, greetingType) {{
+    if (!data.host) return "";
+    return data.host + "/cuadmin/greeting.do?op=readCallhandler&objectId=" + handlerId + "&greetingType=" + encodeURIComponent(greetingType);
 }}
 
 function edgeMatchesSchedule(e) {{
@@ -2092,14 +2104,19 @@ data.nodes.forEach(n => nodeMap[n.id] = n);
 
 function adminUrl(node) {{
     if (!data.host || !node || !node.id) return "";
-    const paths = {{
-        callhandler: "/cuadmin/#/callmgmt/callhandlers/",
-        interview: "/cuadmin/#/callmgmt/interviewhandlers/",
-        directory: "/cuadmin/#/callmgmt/directoryhandlers/",
-        routingrule: "/cuadmin/#/callrouting/directroutingrules/",
+    const ops = {{
+        callhandler: "callhandler.do?op=read",
+        interview: "interviewhandler.do?op=read",
+        directory: "directoryhandler.do?op=read",
+        routingrule: "routingrule.do?op=read",
     }};
-    const p = paths[node.type];
-    return p ? data.host + p + node.id : "";
+    const op = ops[node.type];
+    return op ? data.host + "/cuadmin/" + op + "&objectId=" + node.id : "";
+}}
+
+function greetingUrl(handlerId, greetingType) {{
+    if (!data.host) return "";
+    return data.host + "/cuadmin/greeting.do?op=readCallhandler&objectId=" + handlerId + "&greetingType=" + encodeURIComponent(greetingType);
 }}
 
 function esc(s) {{
@@ -2243,7 +2260,10 @@ function createCard(node, isEntry) {{
         audios.forEach(a => {{
             const row = document.createElement("div");
             row.className = "audio-row";
-            row.innerHTML = '&#9835; <a href="' + esc(a.url) + '" target="_blank" class="audio-badge">' + esc(a.greeting) + ' greeting</a>' + schedTag(a.schedule);
+            const gUrl = greetingUrl(node.id, a.greeting);
+            row.innerHTML = '&#9835; <a href="' + esc(a.url) + '" target="_blank" class="audio-badge" title="Play audio">' + esc(a.greeting) + ' greeting</a>' +
+                (gUrl ? ' <a href="' + esc(gUrl) + '" target="_blank" style="color:#888; font-size:10px; text-decoration:none;" title="Edit in Unity">&#9881;</a>' : '') +
+                schedTag(a.schedule);
             card.appendChild(row);
         }});
     }}
@@ -2507,7 +2527,8 @@ tr:hover {{ background: #16213e; }}
 <a href="index.html" style="color:#1abc9c; font-size:13px;">Home</a> &nbsp;
 <a href="callflow.html" style="color:#1abc9c; font-size:13px;">Call Flow</a> &nbsp;
 <a href="callhandler_map.html" style="color:#1abc9c; font-size:13px;">Graph View</a> &nbsp;
-<a href="callhandler_report.html" style="color:#1abc9c; font-size:13px;">Handlers &amp; Routing</a>
+<a href="callhandler_report.html" style="color:#1abc9c; font-size:13px;">Handlers &amp; Routing</a> &nbsp;
+<a href="test_times.html" style="color:#1abc9c; font-size:13px;">Test Times</a>
 
 <div class="section-header"><h2 id="schedules">Business Hours</h2><button class="copy-btn" onclick="copyTableAsMd('scheduleTable', this)">Copy as Markdown</button></div>
 <table id="scheduleTable">
@@ -2597,6 +2618,252 @@ function copyTableAsMd(tableId, btn) {{
 </html>'''
 
 
+def generate_test_times_html(schedules, site_name="", host=""):
+    """Generate a page listing all unique times to test the call tree for a generic week."""
+    title_prefix = f"{site_name} — " if site_name else ""
+    # Build raw schedule data with minute values and day flags for JS processing
+    raw_schedules = []
+    for s in schedules:
+        details = []
+        for d in s.get("_details", []):
+            if str(d.get("IsActive", "true")).lower() != "true":
+                continue
+            try:
+                start_min = int(d.get("StartTime", 0))
+                end_min = int(d.get("EndTime", 1440))
+            except (ValueError, TypeError):
+                continue
+            day_flags = {}
+            for flag, abbr in _DAY_FLAGS:
+                day_flags[abbr] = str(d.get(flag, "false")).lower() == "true"
+            details.append({"start": start_min, "end": end_min, "days": day_flags})
+        if details:
+            raw_schedules.append({"name": s.get("DisplayName", ""), "details": details})
+    report_data = json.dumps({"schedules": raw_schedules, "siteName": site_name})
+
+    return f'''<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{title_prefix}Test Times</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='12' fill='%231a1a2e'/><path d='M16 20a4 4 0 014-4h8a4 4 0 014 4v24a4 4 0 01-4 4h-8a4 4 0 01-4-4z' fill='%23e94560'/><circle cx='24' cy='42' r='2' fill='%231a1a2e'/><path d='M36 28h10m0 0l-4-4m4 4l-4 4' stroke='%232ecc71' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/><path d='M36 38h10m0 0l-4-4m4 4l-4 4' stroke='%233498db' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/></svg>">
+<style>
+* {{ margin: 0; padding: 0; box-sizing: border-box; }}
+body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #1a1a2e; color: #e0e0e0; padding: 24px; }}
+h1 {{ color: #e94560; margin-bottom: 4px; }}
+.subtitle {{ color: #888; font-size: 13px; margin-bottom: 24px; }}
+h2 {{ color: #e94560; margin: 28px 0 10px 0; font-size: 18px; border-bottom: 1px solid #0f3460; padding-bottom: 6px; }}
+table {{ width: 100%; border-collapse: collapse; margin-bottom: 24px; font-size: 13px; }}
+th {{ background: #16213e; color: #e94560; text-align: left; padding: 8px 12px; position: sticky; top: 0; border-bottom: 2px solid #0f3460; }}
+td {{ padding: 7px 12px; border-bottom: 1px solid #0f3460; vertical-align: top; }}
+tr:hover {{ background: #16213e; }}
+.muted {{ color: #555; }}
+.state-standard {{ color: #2ecc71; font-weight: 600; }}
+.state-offhours {{ color: #f39c12; font-weight: 600; }}
+.state-holiday {{ color: #e74c3c; font-weight: 600; }}
+.reason {{ color: #888; font-size: 12px; }}
+.note {{ background: #16213e; border-left: 4px solid #e74c3c; padding: 16px 20px; margin: 24px 0; border-radius: 0 6px 6px 0; line-height: 1.6; }}
+.note strong {{ color: #e74c3c; }}
+.no-transitions {{ color: #888; font-style: italic; padding: 16px 0; }}
+.copy-btn {{ padding: 4px 10px; border: 1px solid #0f3460; background: #16213e; color: #888; cursor: pointer; border-radius: 3px; font-size: 11px; transition: all 0.2s; margin-left: 12px; }}
+.copy-btn:hover {{ color: #e0e0e0; border-color: #e94560; }}
+.section-header {{ display: flex; align-items: center; }}
+.back-to-top {{ position: fixed; bottom: 16px; left: 16px; padding: 8px 14px; background: #0f3460; border: 1px solid #0f3460; color: #e0e0e0; cursor: pointer; border-radius: 4px; font-size: 12px; z-index: 100; text-decoration: none; }}
+.back-to-top:hover {{ background: #1a1a4e; border-color: #e94560; }}
+.day-off {{ background: #1a1a2e; }}
+</style>
+</head>
+<body>
+<h1>{title_prefix}Test Times</h1>
+<p class="subtitle">Unique times to call and verify the auto attendant routes correctly for each schedule state.</p>
+<a href="index.html" style="color:#1abc9c; font-size:13px;">Home</a> &nbsp;
+<a href="callflow.html" style="color:#1abc9c; font-size:13px;">Call Flow</a> &nbsp;
+<a href="schedules.html" style="color:#1abc9c; font-size:13px;">Schedules</a> &nbsp;
+<a href="callhandler_report.html" style="color:#1abc9c; font-size:13px;">Handlers &amp; Routing</a>
+
+<div class="note">
+<strong>Holiday Testing:</strong> Create a temporary holiday schedule entry for today's date in Cisco Unity Connection
+to test the Holiday greeting path. Remove it after testing. Holidays override all other schedules, so this is the
+only way to verify that Holiday greetings and routing work correctly without waiting for an actual holiday.
+</div>
+
+<div id="content"></div>
+
+<script>
+const data = {report_data};
+
+function fmtTime(minutes) {{
+    const h = Math.floor(minutes / 60);
+    const m = minutes % 60;
+    const ampm = h < 12 ? "AM" : "PM";
+    const h12 = h % 12 || 12;
+    return h12 + ":" + String(m).padStart(2, "0") + " " + ampm;
+}}
+
+function esc(s) {{
+    const d = document.createElement("div");
+    d.textContent = s || "";
+    return d.innerHTML;
+}}
+
+const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const DAY_LABELS = {{ Mon: "Monday", Tue: "Tuesday", Wed: "Wednesday", Thu: "Thursday", Fri: "Friday", Sat: "Saturday", Sun: "Sunday" }};
+
+(function() {{
+    const container = document.getElementById("content");
+
+    // For each schedule, compute per-day active windows
+    // Merge all schedules' windows per day to find all transitions
+    const dayWindows = {{}};  // day -> list of window objects
+    DAYS.forEach(d => dayWindows[d] = []);
+
+    data.schedules.forEach(s => {{
+        s.details.forEach(det => {{
+            DAYS.forEach(day => {{
+                if (det.days[day]) {{
+                    dayWindows[day].push({{ start: det.start, end: det.end, schedule: s.name }});
+                }}
+            }});
+        }});
+    }});
+
+    if (!data.schedules.length) {{
+        container.innerHTML = '<p class="no-transitions">No schedule data available. Run the report with schedule data to generate test times.</p>';
+        return;
+    }}
+
+    DAYS.forEach(day => {{
+        const section = document.createElement("div");
+        const windows = dayWindows[day].sort((a, b) => a.start - b.start);
+
+        let heading = '<div class="section-header"><h2>' + DAY_LABELS[day] + '</h2>';
+        heading += '<button class="copy-btn" onclick="copyDayTable(\'' + day + '\', this)">Copy as Markdown</button></div>';
+        section.innerHTML = heading;
+
+        if (!windows.length) {{
+            section.innerHTML += '<p class="no-transitions">No business hours scheduled — Off Hours all day.</p>';
+            const tbl = document.createElement("table");
+            tbl.id = "table-" + day;
+            tbl.innerHTML = '<thead><tr><th>Test Time</th><th>Expected State</th><th>Reason</th></tr></thead>' +
+                '<tbody><tr><td>Any time</td><td class="state-offhours">Off Hours</td><td class="reason">No schedule active this day</td></tr></tbody>';
+            section.appendChild(tbl);
+            container.appendChild(section);
+            return;
+        }}
+
+        // Merge overlapping windows and sort
+        // Flatten overlapping windows into non-overlapping segments
+        const merged = [];
+        let cur = null;
+        windows.forEach(w => {{
+            if (!cur) {{ cur = {{ start: w.start, end: w.end, schedules: [w.schedule] }}; return; }}
+            if (w.start <= cur.end) {{
+                cur.end = Math.max(cur.end, w.end);
+                if (!cur.schedules.includes(w.schedule)) cur.schedules.push(w.schedule);
+            }} else {{
+                merged.push(cur);
+                cur = {{ start: w.start, end: w.end, schedules: [w.schedule] }};
+            }}
+        }});
+        if (cur) merged.push(cur);
+
+        // Compute test times — one sample per distinct state period
+        const tests = [];
+
+        // Off hours before first window
+        if (merged[0].start > 0) {{
+            const t = Math.floor(merged[0].start / 2);
+            tests.push({{ time: t, state: "offhours", reason: "Off hours — before business hours" }});
+        }}
+
+        merged.forEach((w, i) => {{
+            const schedNote = w.schedules.length > 0 && data.schedules.length > 1
+                ? " (" + w.schedules.join(", ") + ")" : "";
+
+            // During this business hours window
+            const mid = Math.floor((w.start + w.end) / 2);
+            tests.push({{ time: mid, state: "standard", reason: "During business hours" + schedNote }});
+
+            // Gap between this window and next (split shift off hours)
+            if (i < merged.length - 1) {{
+                const gapMid = Math.floor((w.end + merged[i + 1].start) / 2);
+                tests.push({{ time: gapMid, state: "offhours", reason: "Off hours — gap between shifts" }});
+            }}
+        }});
+
+        // Off hours after last window
+        const lastEnd = merged[merged.length - 1].end;
+        if (lastEnd < 1440) {{
+            const t = Math.floor((lastEnd + 1440) / 2);
+            tests.push({{ time: t, state: "offhours", reason: "Off hours — after business hours" }});
+        }} else {{
+            tests.push({{ time: 720, state: "standard", reason: "24-hour schedule — always Standard" }});
+        }}
+
+        // Deduplicate by time, keeping earliest entry per time
+        const seen = new Set();
+        const unique = [];
+        tests.sort((a, b) => a.time - b.time);
+        tests.forEach(t => {{
+            if (!seen.has(t.time)) {{
+                seen.add(t.time);
+                unique.push(t);
+            }}
+        }});
+
+        const tbl = document.createElement("table");
+        tbl.id = "table-" + day;
+        tbl.innerHTML = '<thead><tr><th>Test Time</th><th>Expected State</th><th>Reason</th></tr></thead>';
+        const tbody = document.createElement("tbody");
+        unique.forEach(t => {{
+            const tr = document.createElement("tr");
+            const stateClass = t.state === "standard" ? "state-standard" : "state-offhours";
+            const stateLabel = t.state === "standard" ? "Standard" : "Off Hours";
+            tr.innerHTML = '<td>' + fmtTime(t.time) + '</td><td class="' + stateClass + '">' + stateLabel + '</td><td class="reason">' + esc(t.reason) + '</td>';
+            tbody.appendChild(tr);
+        }});
+        tbl.appendChild(tbody);
+        section.appendChild(tbl);
+        container.appendChild(section);
+    }});
+
+    // Holiday test section
+    const holidaySection = document.createElement("div");
+    holidaySection.innerHTML = '<div class="section-header"><h2>Holiday Override</h2></div>' +
+        '<table id="table-holiday"><thead><tr><th>Test Time</th><th>Expected State</th><th>Reason</th></tr></thead>' +
+        '<tbody>' +
+        '<tr><td>During business hours</td><td class="state-holiday">Holiday</td><td class="reason">Holiday overrides Standard — should hear Holiday greeting</td></tr>' +
+        '<tr><td>Outside business hours</td><td class="state-holiday">Holiday</td><td class="reason">Holiday overrides Off Hours — should hear Holiday greeting, not Off Hours</td></tr>' +
+        '</tbody></table>' +
+        '<p style="color:#888; font-size:12px; margin-top:8px;">Create a temporary holiday for today in Unity Connection to test these. Remove after testing.</p>';
+    container.appendChild(holidaySection);
+}})();
+
+function flashBtn(btn, msg) {{
+    const orig = btn.textContent;
+    btn.textContent = msg || "Copied!";
+    setTimeout(() => btn.textContent = orig, 1500);
+}}
+
+function copyDayTable(day, btn) {{
+    const table = document.getElementById("table-" + day);
+    if (!table) return;
+    const headerCells = Array.from(table.querySelectorAll("thead th"));
+    const headers = headerCells.map(th => th.textContent);
+    const lines = [DAY_LABELS[day], headers.join(" | "), headers.map(() => "---").join(" | ")];
+    table.querySelectorAll("tbody tr").forEach(tr => {{
+        const cells = Array.from(tr.querySelectorAll("td")).map(td => td.textContent.trim());
+        lines.push(cells.join(" | "));
+    }});
+    navigator.clipboard.writeText(lines.join("\\n")).then(() => flashBtn(btn));
+}}
+</script>
+<a href="#" class="back-to-top">&uarr; Top</a>
+</body>
+</html>'''
+
+
 def generate_index_html(site_name=""):
     title_prefix = f"{site_name} — " if site_name else ""
     return f'''<!DOCTYPE html>
@@ -2637,6 +2904,10 @@ h1 {{ color: #e94560; font-size: 24px; margin-bottom: 8px; }}
 <a href="schedules.html" class="card">
 <h2>Schedules</h2>
 <p>Business hours and holiday schedules.</p>
+</a>
+<a href="test_times.html" class="card">
+<h2>Test Times</h2>
+<p>Unique times to call each day of the week to verify all schedule transitions route correctly.</p>
 </a>
 </div>
 </body>
@@ -2807,7 +3078,8 @@ def cmd_generate(args):
             c = n["classification"]
             classifications[c] = classifications.get(c, 0) + 1
 
-        print(f"\nGraph: {len(nodes)} nodes, {len(edges)} edges")
+        audio_count = sum(len(n.get("audio", [])) for n in nodes)
+        print(f"\nGraph: {len(nodes)} nodes, {len(edges)} edges, {audio_count} audio greetings")
         for cls, count in sorted(classifications.items()):
             print(f"  {cls}: {count}")
 
@@ -2835,6 +3107,11 @@ def cmd_generate(args):
         sched_html = generate_schedules_html(holiday_schedules, schedules, site_name=site_name, host=host)
         with open(sched_path, "w", encoding="utf-8") as f:
             f.write(sched_html)
+
+        test_path = os.path.join(site_dir, "test_times.html")
+        test_html = generate_test_times_html(schedules, site_name=site_name, host=host)
+        with open(test_path, "w", encoding="utf-8") as f:
+            f.write(test_html)
 
         idx_html = generate_index_html(site_name=site_name)
         with open(index_path, "w", encoding="utf-8") as f:
