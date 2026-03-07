@@ -2839,7 +2839,7 @@ function getEdges(sourceId) {{
 }}
 
 function isHandlerNode(n) {{
-    return n && (n.type === "callhandler" || n.type === "directory" || n.type === "interview");
+    return n && (n.type === "callhandler" || n.type === "directory" || n.type === "interview" || n.type === "action" || n.type === "phone");
 }}
 
 // Populate entry point dropdown
@@ -2943,6 +2943,10 @@ function createCard(node, isEntry) {{
         badges.innerHTML = '<span class="type-pill directory">Directory</span>';
     }} else if (node.type === "interview") {{
         badges.innerHTML = '<span class="type-pill interview">Interview</span>';
+    }} else if (node.type === "action") {{
+        badges.innerHTML = '<span class="type-pill" style="color:#e67e22;">Action</span>';
+    }} else if (node.type === "phone") {{
+        badges.innerHTML = '<span class="type-pill" style="color:#1abc9c;">Phone</span>';
     }}
     if (node.scheduleName) badges.innerHTML += '<span class="schedule-pill">' + esc(node.scheduleName) + '</span>';
     const aUrl = adminUrl(node);
