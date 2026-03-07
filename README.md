@@ -103,15 +103,19 @@ All report pages share a **floating navigation pill** and a **dark/light mode to
 - **Misconfiguration warnings** highlighted per node
 - **CUC admin deep links** to open handlers directly in the CUC admin interface
 
+### Flow Trees (`callflow_trees.html`)
+
+- **Text-based BFS call flow trees** from each routing rule entry point
+- **Schedule mode selector** -- switch between Standard, Off Hours, Holiday, and All
+- **Inline audio playback** with schedule badges
+- **Copy as text** for pasting into documentation or tickets
+
 ### Table Report (`callhandler_report.html`)
 
 - **Schedule mode selector** -- switch between Standard, Off Hours, Holiday, and All views to see how call routing changes by time of day
 - **Search and filter** by name, extension, type, or classification
-- **Call flow trees** -- expandable BFS trees showing the full path from each root handler
 - **Inline audio playback** for handlers with uploaded greeting recordings, with schedule badges and enabled/disabled state
 - **CUC admin deep links** for each handler and greeting
-- **Schedules table** showing business hour time blocks per schedule
-- **Holiday schedules table** with start/end dates
 - **Debug panel** (bottom-right button) with node lookup, problem finder, and full JSON data dump
 
 ### Call Flow View (`callflow.html`)
@@ -134,7 +138,8 @@ All report pages share a **floating navigation pill** and a **dark/light mode to
 - Analyzes schedule data to compute recommended test times for each day of the week
 - Groups days with identical schedules into ranges (e.g., "Monday -- Thursday")
 - Identifies standard hours, off-hours, and transition points
-- Copy as Markdown button for each day group
+- **Dial path cheat sheet** -- exact key sequences to reach every handler from each entry point
+- Copy as Markdown button for each day group and the cheat sheet
 - Includes a note about creating a temporary holiday for testing holiday routing
 
 ## Misconfiguration Detection
@@ -174,6 +179,14 @@ Transfer targets that route to phone extensions are resolved to user/contact nam
 | Red    | **Dead End**         | Has incoming edges but callers have nowhere to go |
 | Purple | **Interview Handler** | Interview handler node |
 | Teal   | **Phone Extension**  | Transfer target phone extension |
+
+## Offline / Air-Gapped Use
+
+This tool is designed to work on machines with no internet access. The only network requirement is connectivity to the CUC server.
+
+- **Python dependencies** are bundled as wheel files in `resources/` -- install with `pip install --no-index --find-links=resources requests`
+- **D3.js** is bundled in `resources/` and copied into each report directory automatically
+- **Generated reports** are fully self-contained -- all CSS, JavaScript, fonts, and audio are embedded or local. No CDN, no web fonts, no external requests. Reports can be viewed on any machine with a browser.
 
 ## TLS Compatibility
 

@@ -38,12 +38,12 @@ CUC Server (CUPI REST API)
   |   (greeting WAVs)    |  Saved to audio/ for inline playback
   +---------+-----------+
             |
-     +------+------+
-     v      v      v
-  +------+ +------+ +------+ +------+ +------+ +------+
-  |index | | map  | |report| | flow | |sched | | test |
-  |.html | |.html | |.html | |.html | |.html | |times |
-  +------+ +------+ +------+ +------+ +------+ +------+
+     +------+------+------+
+     v      v      v      v
+  +------+ +------+ +------+ +------+ +------+ +------+ +------+ +------+
+  |index | | map  | |report| | flow | |trees | |sched | | test | |audit |
+  |.html | |.html | |.html | |.html | |.html | |.html | |times | |.html |
+  +------+ +------+ +------+ +------+ +------+ +------+ +------+ +------+
 ```
 
 ## CUPI API Endpoints Used
@@ -183,7 +183,7 @@ All HTML files are written to `reports/<SiteName>_<timestamp>/`. Pages are self-
 | File | Generator | Dependencies |
 |------|-----------|-------------|
 | `index.html` | `generate_index_html` | None (links to other pages) |
-| `callhandler_map.html` | `generate_html` | D3.js (local copy or CDN) |
+| `callhandler_map.html` | `generate_html` | D3.js (bundled from `resources/`) |
 | `callhandler_report.html` | `generate_table_html` | None (pure HTML/CSS/JS) |
 | `callflow.html` | `generate_callflow_html` | None (pure HTML/CSS/JS, supports deep linking) |
 | `callflow_trees.html` | `generate_flow_trees_html` | None (text-based BFS trees, schedule filtering) |
@@ -199,6 +199,42 @@ All HTML files are written to `reports/<SiteName>_<timestamp>/`. Pages are self-
 - **Schedule badges** -- visual indicators of which schedule context applies to edges and audio
 - **Greeting enabled/disabled state** -- red "(disabled)" indicator on greeting audio entries
 - **System default indicator** -- orange "(system default)" on greetings using PlayWhat=1 instead of personal recordings
+
+## Offline / Air-Gapped Operation
+
+The tool is designed to run on machines with no internet access. The only network requirement is connectivity to the CUC server itself.
+
+### Bundled Dependencies
+
+All external dependencies are stored in `resources/`:
+
+| File | Purpose |
+|------|---------|
+| `d3.v7.min.js` | D3.js visualization library — copied into each report directory for offline graph rendering |
+| `requests-*.whl` | Python HTTP library (the only pip dependency) |
+| `certifi-*.whl` | SSL certificate bundle (requests dependency) |
+| `charset_normalizer-*.whl` | Encoding detection (requests dependency) |
+| `idna-*.whl` | Internationalized domain names (requests dependency) |
+| `urllib3-*.whl` | HTTP connection pooling (requests dependency) |
+
+All Python wheels are pure Python (`py3-none-any`) and work on any OS without compilation.
+
+### Offline Install
+
+```
+pip install --no-index --find-links=resources requests
+```
+
+### Report Self-Containment
+
+Generated reports are fully self-contained:
+- All CSS and JavaScript is inline (no CDN references)
+- D3.js is copied from `resources/` into the report directory
+- Fonts use the system font stack (no web fonts)
+- Favicons are inline SVG data URIs
+- Audio files are downloaded locally into `audio/`
+
+Reports can be viewed on any machine with a browser — no server or internet needed.
 
 ## Data Collection Details
 
