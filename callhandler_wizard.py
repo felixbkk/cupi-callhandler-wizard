@@ -821,14 +821,17 @@ def generate_html(nodes, edges, d3_local=False, site_name=""):
 <style>
 * {{ margin: 0; padding: 0; box-sizing: border-box; }}
 body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; height: 100vh; background: #1a1a2e; color: #e0e0e0; }}
-#graph-container {{ flex: 1; position: relative; overflow: hidden; }}
-svg {{ width: 100%; height: 100%; }}
-#sidebar {{ width: 320px; background: #16213e; border-left: 1px solid #0f3460; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; }}
-#sidebar h2 {{ color: #e94560; font-size: 18px; border-bottom: 1px solid #0f3460; padding-bottom: 8px; }}
-#sidebar h3 {{ color: #e94560; font-size: 14px; margin-top: 8px; }}
+#detail-panel {{ width: 320px; background: #16213e; border-right: 1px solid #0f3460; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; transition: width 0.2s; }}
+#detail-panel.collapsed {{ width: 0; padding: 0; overflow: hidden; border: none; }}
+#detail-panel h3 {{ color: #e94560; font-size: 14px; margin-top: 8px; }}
 .detail-row {{ display: flex; flex-direction: column; gap: 2px; padding: 4px 0; }}
 .detail-label {{ font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 0.5px; }}
 .detail-value {{ font-size: 14px; word-break: break-all; }}
+#graph-container {{ flex: 1; position: relative; overflow: hidden; }}
+svg {{ width: 100%; height: 100%; }}
+#sidebar {{ width: 280px; background: #16213e; border-left: 1px solid #0f3460; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; }}
+#sidebar h2 {{ color: #e94560; font-size: 18px; border-bottom: 1px solid #0f3460; padding-bottom: 8px; }}
+#sidebar h3 {{ color: #e94560; font-size: 14px; margin-top: 8px; }}
 .controls {{ display: flex; flex-direction: column; gap: 8px; }}
 .toggle-btn {{ padding: 8px 12px; border: 1px solid #0f3460; background: #16213e; color: #e0e0e0; cursor: pointer; border-radius: 4px; font-size: 12px; text-align: left; transition: background 0.2s; }}
 .toggle-btn:hover {{ background: #0f3460; }}
@@ -840,10 +843,15 @@ svg {{ width: 100%; height: 100%; }}
 .link-label {{ font-size: 9px; fill: #888; pointer-events: none; }}
 .link {{ stroke-opacity: 0.5; fill: none; }}
 marker {{ fill: #666; }}
-#node-details {{ min-height: 120px; }}
 </style>
 </head>
 <body>
+<div id="detail-panel" class="collapsed">
+<div id="node-details">
+<h3>Node Details</h3>
+<p style="font-size:12px; color:#666;">Click a node to see details</p>
+</div>
+</div>
 <div id="graph-container">
 <svg></svg>
 </div>
@@ -887,10 +895,6 @@ marker {{ fill: #666; }}
 <div class="legend-item"><span class="legend-dot" style="background:#1abc9c"></span> Phone Extension</div>
 <div class="legend-item"><span class="legend-dot" style="background:#f39c12"></span> Directory Handler</div>
 <div class="legend-item"><span class="legend-dot" style="background:#e74c3c"></span> Action (Hangup, etc.)</div>
-</div>
-<div id="node-details">
-<h3>Node Details</h3>
-<p style="font-size:12px; color:#666;">Click a node to see details</p>
 </div>
 </div>
 <script>
@@ -1010,6 +1014,7 @@ svg.append("defs").append("marker")
 svg.on("click", function(event) {{
     if (event.target.tagName !== "circle") {{
         clearHighlight();
+        document.getElementById("detail-panel").classList.add("collapsed");
         document.getElementById("node-details").innerHTML = '<h3>Node Details</h3><p style="font-size:12px; color:#666;">Click a node to see details</p>';
     }}
 }});
@@ -1284,6 +1289,8 @@ function showDetails(d) {{
         html += '<div class="detail-row"><span class="detail-value" style="color:#666; font-size:12px;">No connections</span></div>';
     }}
 
+    const panel = document.getElementById("detail-panel");
+    panel.classList.remove("collapsed");
     const details = document.getElementById("node-details");
     details.innerHTML = html;
 
