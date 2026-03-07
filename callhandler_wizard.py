@@ -306,6 +306,76 @@ def fetch_holiday_schedules(session, host):
     return holiday_scheds
 
 
+def audit_holidays(holiday_schedules, run_date=None):
+    """Audit holiday schedules for staleness.
+
+    Returns a list of {"level": "critical"|"warning"|"info", "message": "..."} dicts.
+    """
+    if run_date is None:
+        run_date = datetime.now()
+    current_year = run_date.year
+    next_year = current_year + 1
+    is_december = run_date.month == 12
+    findings = []
+
+    # Collect all holiday dates across all schedules
+    all_dates = []
+    for sched in holiday_schedules:
+        for h in sched.get("_holidays", []):
+            date_str = h.get("StartDate", "").split(" ")[0]  # "YYYY-MM-DD ..." → "YYYY-MM-DD"
+            if not date_str:
+                continue
+            try:
+                dt = datetime.strptime(date_str, "%Y-%m-%d")
+                all_dates.append((dt, h.get("DisplayName", "?"), sched.get("DisplayName", "?")))
+            except ValueError:
+                pass
+
+    if not all_dates:
+        findings.append({
+            "level": "warning",
+            "message": "No holidays configured in any holiday schedule",
+        })
+        return findings
+
+    years_present = sorted(set(dt.year for dt, _, _ in all_dates))
+    past_year_dates = [(dt, name, sched) for dt, name, sched in all_dates if dt.year < current_year]
+    current_year_dates = [(dt, name, sched) for dt, name, sched in all_dates if dt.year == current_year]
+    next_year_dates = [(dt, name, sched) for dt, name, sched in all_dates if dt.year == next_year]
+
+    # Flag previous-year holidays
+    if past_year_dates:
+        past_years = sorted(set(dt.year for dt, _, _ in past_year_dates))
+        findings.append({
+            "level": "warning",
+            "message": f"Holiday calendar contains {len(past_year_dates)} entries from past year(s): {', '.join(str(y) for y in past_years)}",
+        })
+
+    # No current-year holidays at all
+    if not current_year_dates:
+        findings.append({
+            "level": "critical",
+            "message": f"No holidays configured for {current_year}",
+        })
+
+    # December: next year's holidays should be in place
+    if is_december and not next_year_dates:
+        findings.append({
+            "level": "critical",
+            "message": f"It is December — holiday calendar needs updating for {next_year}",
+        })
+
+    # Positive: all looks good
+    if not findings:
+        future_count = len([dt for dt, _, _ in all_dates if dt >= run_date])
+        findings.append({
+            "level": "info",
+            "message": f"Holiday calendar is current ({len(current_year_dates)} entries for {current_year}, {future_count} upcoming)",
+        })
+
+    return findings
+
+
 def fetch_schedules(session, host):
     print("Fetching schedules...")
     all_schedules = paginated_fetch(session, host,
@@ -2839,7 +2909,7 @@ if (!loadFromHash()) {{
 </html>'''
 
 
-def generate_schedules_html(holiday_schedules, schedules, site_name="", host=""):
+def generate_schedules_html(holiday_schedules, schedules, site_name="", host="", holiday_audit=None):
     title_prefix = f"{site_name} — " if site_name else ""
     report_data = json.dumps({
         "host": host,
@@ -2862,6 +2932,7 @@ def generate_schedules_html(holiday_schedules, schedules, site_name="", host="")
                 "active": str(d.get("IsActive", "true")).lower() == "true",
             } for d in s.get("_details", [])]
         } for s in schedules],
+        "holidayAudit": holiday_audit or [],
     })
 
     return f'''<!DOCTYPE html>
@@ -2887,6 +2958,12 @@ tr:hover {{ background: #16213e; }}
 .copy-btn:hover {{ color: #e0e0e0; border-color: #e94560; }}
 .back-to-top {{ position: fixed; bottom: 16px; left: 16px; padding: 8px 14px; background: #0f3460; border: 1px solid #0f3460; color: #e0e0e0; cursor: pointer; border-radius: 4px; font-size: 12px; z-index: 100; text-decoration: none; }}
 .back-to-top:hover {{ background: #1a1a4e; border-color: #e94560; }}
+.audit-banner {{ padding: 12px 16px; border-radius: 6px; margin: 12px 0 20px 0; font-size: 13px; }}
+.audit-banner.critical {{ background: #3a1111; border: 1px solid #e74c3c; color: #e74c3c; }}
+.audit-banner.warning {{ background: #3a2a11; border: 1px solid #e67e22; color: #e67e22; }}
+.audit-banner.info {{ background: #11332a; border: 1px solid #2ecc71; color: #2ecc71; }}
+.audit-item {{ padding: 2px 0; }}
+.audit-tag {{ font-weight: bold; margin-right: 6px; }}
 </style>
 </head>
 <body>
@@ -2901,6 +2978,7 @@ tr:hover {{ background: #16213e; }}
 </table>
 
 <div class="section-header"><h2 id="holidays">Holiday Schedules</h2><button class="copy-btn" onclick="copyTableAsMd('holidayTable', this)">Copy as Markdown</button></div>
+<div id="holidayAudit"></div>
 <table id="holidayTable">
 <thead>
 <tr><th>Schedule</th><th>Holiday</th><th>Date</th></tr>
@@ -2955,6 +3033,26 @@ function esc(s) {{
             tbody.appendChild(tr);
         }});
     }});
+}})();
+
+// Render holiday audit
+(function() {{
+    const container = document.getElementById("holidayAudit");
+    if (!data.holidayAudit || !data.holidayAudit.length) return;
+    const worst = data.holidayAudit.reduce((w, f) => {{
+        const rank = {{ critical: 3, warning: 2, info: 1 }};
+        return (rank[f.level] || 0) > (rank[w] || 0) ? f.level : w;
+    }}, "info");
+    const banner = document.createElement("div");
+    banner.className = "audit-banner " + worst;
+    data.holidayAudit.forEach(f => {{
+        const item = document.createElement("div");
+        item.className = "audit-item";
+        const tag = f.level === "critical" ? "CRITICAL" : f.level === "warning" ? "WARNING" : "OK";
+        item.innerHTML = '<span class="audit-tag">[' + tag + ']</span>' + esc(f.message);
+        banner.appendChild(item);
+    }});
+    container.appendChild(banner);
 }})();
 
 function flashBtn(btn, msg) {{
@@ -3157,11 +3255,6 @@ const DAY_LABELS = {{ Mon: "Monday", Tue: "Tuesday", Wed: "Wednesday", Thu: "Thu
 
         // Compute test times — one sample per distinct state period
         const tests = [];
-
-        // Off hours before first window — 5 min after midnight
-        if (merged[0].start > 0) {{
-            tests.push({{ time: 5, state: "offhours", reason: "Off hours — before business hours" }});
-        }}
 
         merged.forEach((w, i) => {{
             const schedNote = w.schedules.length > 0 && data.schedules.length > 1
@@ -3493,6 +3586,16 @@ def cmd_generate(args):
                 for w in warnings:
                     print(f"  {name}: {w}")
 
+        # Holiday audit
+        holiday_audit = audit_holidays(holiday_schedules)
+        if holiday_audit:
+            has_issues = any(finding["level"] in ("critical", "warning") for finding in holiday_audit)
+            if has_issues:
+                print("\nHoliday Calendar Audit:")
+                for finding in holiday_audit:
+                    tag = "CRITICAL" if finding["level"] == "critical" else "WARNING" if finding["level"] == "warning" else "OK"
+                    print(f"  [{tag}] {finding['message']}")
+
         if audio_count:
             print("\nDownloading greeting audio files...")
             download_audio_files(session, nodes, site_dir)
@@ -3518,7 +3621,7 @@ def cmd_generate(args):
         with open(flow_path, "w", encoding="utf-8") as f:
             f.write(flow_html)
 
-        sched_html = generate_schedules_html(holiday_schedules, schedules, site_name=site_name, host=host)
+        sched_html = generate_schedules_html(holiday_schedules, schedules, site_name=site_name, host=host, holiday_audit=holiday_audit)
         with open(sched_path, "w", encoding="utf-8") as f:
             f.write(sched_html)
 
@@ -3881,6 +3984,16 @@ def cmd_schedules(args):
         print(f"\n  {s.get('DisplayName', 'Unknown')}")
         for h in s.get("_holidays", []):
             print(f"    {h.get('DisplayName', '?')}: {h.get('StartDate', '?')} - {h.get('EndDate', '?')}")
+
+    # Holiday audit
+    holiday_audit = audit_holidays(holiday_schedules)
+    if holiday_audit:
+        print(f"\n{'='*60}")
+        print("HOLIDAY CALENDAR AUDIT")
+        print(f"{'='*60}")
+        for finding in holiday_audit:
+            tag = "CRITICAL" if finding["level"] == "critical" else "WARNING" if finding["level"] == "warning" else "OK"
+            print(f"  [{tag}] {finding['message']}")
 
 
 def cmd_orphans(args):
