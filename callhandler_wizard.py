@@ -134,7 +134,7 @@ def fetch_call_handlers(session, host):
                     if not h.get("DisplayName", "").strip().isdigit()]
     skipped = before - len(all_handlers)
     if skipped:
-        print(f"  Filtered out {skipped} voicemail handlers ({before} → {len(all_handlers)})")
+        print(f"  Filtered out {skipped} voicemail handlers ({before} -> {len(all_handlers)})")
 
     return all_handlers
 
@@ -1721,7 +1721,7 @@ def cmd_orphans(args):
             connections = []
             for e in out_edges:
                 tgt = node_map.get(e["target"], {})
-                connections.append(f"→ {tgt.get('name', '?')} [{e['label']}]")
+                connections.append(f"-> {tgt.get('name', '?')} [{e['label']}]")
             for e in in_edges:
                 src = node_map.get(e["source"], {})
                 connections.append(f"← {src.get('name', '?')} [{e['label']}]")
