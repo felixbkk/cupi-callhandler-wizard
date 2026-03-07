@@ -4115,11 +4115,12 @@ document.getElementById("badge-sysdefault").innerHTML = badge(sysDefaultCount, "
 </html>'''
 
 
-def generate_index_html(site_name="", run_utc=None):
+def generate_index_html(site_name="", run_utc=None, host=""):
     title_prefix = f"{site_name} — " if site_name else ""
     if run_utc is None:
         from datetime import timezone
         run_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    admin_link = f'{host}/cuadmin/home.do' if host else ""
     return f'''<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -4171,6 +4172,7 @@ h1 {{ color: #e94560; font-size: 24px; margin-bottom: 8px; }}
 <h2>Audit Results</h2>
 <p>Misconfiguration warnings, holiday calendar audit, classification concerns, and audio issues.</p>
 </a>
+{'<a href="' + admin_link + '" target="_blank" class="card"><h2>Unity Admin &#8599;</h2><p>Log in to Cisco Unity Connection administration.</p></a>' if admin_link else ''}
 </div>
 </body>
 </html>'''
@@ -4474,7 +4476,7 @@ def cmd_generate(args):
         with open(audit_html_path, "w", encoding="utf-8") as f:
             f.write(audit_html)
 
-        idx_html = generate_index_html(site_name=site_name, run_utc=run_utc)
+        idx_html = generate_index_html(site_name=site_name, run_utc=run_utc, host=host)
         with open(index_path, "w", encoding="utf-8") as f:
             f.write(idx_html)
 
