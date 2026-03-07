@@ -1480,6 +1480,11 @@ tr:hover {{ background: #16213e; }}
 .flow-tree .flow-label {{ color: #e94560; }}
 .flow-tree .flow-muted {{ color: #555; }}
 .flow-tree .flow-visited {{ color: #555; font-style: italic; }}
+.sched-tag {{ display: inline-block; padding: 1px 6px; border-radius: 8px; font-size: 10px; font-weight: 600; margin-left: 4px; }}
+.sched-tag.offhours {{ background: #5b3a1e; color: #f39c12; }}
+.sched-tag.holiday {{ background: #4a1a2e; color: #e74c3c; }}
+.sched-tag.standard {{ background: #1a3a2e; color: #2ecc71; }}
+.sched-tag.alternate {{ background: #2a1a4e; color: #9b59b6; }}
 .section-header {{ display: flex; align-items: center; gap: 12px; }}
 .section-header h2 {{ margin: 0; }}
 .copy-btn {{ padding: 4px 10px; border: 1px solid #0f3460; background: #16213e; color: #888; cursor: pointer; border-radius: 3px; font-size: 11px; transition: all 0.2s; }}
@@ -1581,6 +1586,13 @@ function edgeMatchesSchedule(e) {{
 function audioMatchesSchedule(a) {{
     if (activeSchedule === "all") return true;
     return a.schedule === "always" || a.schedule === activeSchedule;
+}}
+
+const schedLabels = {{ standard: "Standard", offhours: "Off Hours", holiday: "Holiday", alternate: "Alternate" }};
+function schedTag(sched) {{
+    if (!sched || sched === "always") return "";
+    if (activeSchedule !== "all" && sched === activeSchedule) return "";
+    return '<span class="sched-tag ' + sched + '">' + (schedLabels[sched] || sched) + '</span>';
 }}
 
 function setSchedule(mode) {{
@@ -1687,10 +1699,10 @@ function renderTable() {{
 
 function renderCallFlowTrees(activeEdges) {{
     const container = document.getElementById("callFlowTrees");
-    // Build adjacency: source -> [{{label, target}}]
+    // Build adjacency: source -> [{{label, target, schedule}}]
     const adj = {{}};
     activeEdges.forEach(e => {{
-        (adj[e.source] = adj[e.source] || []).push({{ label: e.label, target: e.target }});
+        (adj[e.source] = adj[e.source] || []).push({{ label: e.label, target: e.target, schedule: e.schedule }});
     }});
     // Sort edges: Key entries first (by key), then After:, then Xfer:
     function edgeSortKey(e) {{
@@ -1728,7 +1740,7 @@ function renderCallFlowTrees(activeEdges) {{
             const audios = node.audio.filter(audioMatchesSchedule);
             if (!audios.length) return [];
             const prefix = "  ".repeat(indent);
-            return audios.map(a => prefix + '<a href="' + esc(a.url) + '" target="_blank" class="audio-link">&#9835; ' + esc(a.greeting) + ' greeting</a>');
+            return audios.map(a => prefix + '<a href="' + esc(a.url) + '" target="_blank" class="audio-link">&#9835; ' + esc(a.greeting) + ' greeting</a>' + schedTag(a.schedule));
         }}
 
         let lines = [];
@@ -1750,11 +1762,11 @@ function renderCallFlowTrees(activeEdges) {{
                 const ext = tgt && tgt.extension ? " (" + esc(tgt.extension) + ")" : "";
                 const prefix = "  ".repeat(indent);
                 if (visited.has(edge.target)) {{
-                    lines.push(prefix + '<span class="flow-label">[' + esc(edge.label) + ']</span> -> <span class="flow-visited">' + esc(name) + ext + ' (see above)</span>');
+                    lines.push(prefix + '<span class="flow-label">[' + esc(edge.label) + ']</span> -> <span class="flow-visited">' + esc(name) + ext + ' (see above)</span>' + schedTag(edge.schedule));
                     return;
                 }}
                 visited.add(edge.target);
-                lines.push(prefix + '<span class="flow-label">[' + esc(edge.label) + ']</span> -> <span class="flow-handler">' + esc(name) + ext + '</span>');
+                lines.push(prefix + '<span class="flow-label">[' + esc(edge.label) + ']</span> -> <span class="flow-handler">' + esc(name) + ext + '</span>' + schedTag(edge.schedule));
                 lines.push(...audioLinks(tgt, indent + 1));
                 walk(edge.target, indent + 1);
             }});
@@ -2036,6 +2048,11 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans
 .connector::after {{ content: ''; position: absolute; bottom: -4px; left: 50%; transform: translateX(-50%); border-left: 5px solid transparent; border-right: 5px solid transparent; border-top: 6px solid #0f3460; }}
 .connector-label {{ position: absolute; left: 16px; top: 6px; font-size: 11px; color: #e94560; font-weight: 600; white-space: nowrap; font-family: monospace; }}
 .empty-msg {{ text-align: center; color: #555; padding: 48px; font-size: 14px; }}
+.sched-tag {{ display: inline-block; padding: 1px 6px; border-radius: 8px; font-size: 10px; font-weight: 600; margin-left: 6px; vertical-align: middle; }}
+.sched-tag.offhours {{ background: #5b3a1e; color: #f39c12; }}
+.sched-tag.holiday {{ background: #4a1a2e; color: #e74c3c; }}
+.sched-tag.standard {{ background: #1a3a2e; color: #2ecc71; }}
+.sched-tag.alternate {{ background: #2a1a4e; color: #9b59b6; }}
 @keyframes flash {{ 0%,100% {{ box-shadow: none; }} 50% {{ box-shadow: 0 0 20px rgba(233,69,96,0.5); }} }}
 .flash {{ animation: flash 0.6s ease 2; }}
 </style>
@@ -2143,6 +2160,13 @@ function populateEntryPoints() {{
     if (prev && sel.querySelector('option[value="' + prev + '"]')) sel.value = prev;
 }}
 
+const schedLabels = {{ standard: "Standard", offhours: "Off Hours", holiday: "Holiday", alternate: "Alternate" }};
+function schedTag(sched) {{
+    if (!sched || sched === "always") return "";
+    if (activeSchedule !== "all" && sched === activeSchedule) return "";
+    return '<span class="sched-tag ' + sched + '">' + (schedLabels[sched] || sched) + '</span>';
+}}
+
 function setSchedule(mode) {{
     activeSchedule = mode;
     document.querySelectorAll(".schedule-btn").forEach(btn => {{
@@ -2220,7 +2244,7 @@ function createCard(node, isEntry) {{
         audios.forEach(a => {{
             const row = document.createElement("div");
             row.className = "audio-row";
-            row.innerHTML = '&#9835; <a href="' + esc(a.url) + '" target="_blank" class="audio-badge">' + esc(a.greeting) + ' greeting</a>';
+            row.innerHTML = '&#9835; <a href="' + esc(a.url) + '" target="_blank" class="audio-badge">' + esc(a.greeting) + ' greeting</a>' + schedTag(a.schedule);
             card.appendChild(row);
         }});
     }}
@@ -2253,7 +2277,8 @@ function createCard(node, isEntry) {{
                 '<span class="menu-target' + (isAction ? " action" : "") + (isSelf ? " self-ref" : "") + '">' +
                 esc(targetName) + (isSelf ? " (loops back)" : "") +
                 (targetNode && targetNode.extension ? ' <span style="color:#888">(' + esc(targetNode.extension) + ')</span>' : '') +
-                '</span>';
+                '</span>' +
+                schedTag(edge.schedule);
 
             if (isClickable) {{
                 row.addEventListener("click", () => expandTarget(edge, card));
