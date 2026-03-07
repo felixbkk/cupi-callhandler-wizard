@@ -3188,6 +3188,62 @@ def cmd_handler(args):
             print(json.dumps(ch, indent=2))
 
 
+def cmd_audio_probe(args):
+    """Probe every call handler's greetings for uploaded audio."""
+    session, host = connect(args)
+    call_handlers = fetch_call_handlers(session, host)
+
+    print(f"\nProbing greetings for {len(call_handlers)} call handlers...\n")
+
+    total_greetings = 0
+    total_audio = 0
+    handlers_with_audio = 0
+
+    for ch in call_handlers:
+        oid = ch.get("ObjectId", "")
+        name = ch.get("DisplayName", "")
+        greetings = fetch_greetings(session, host, oid, name)
+        handler_has_audio = False
+
+        print(f"  {name}")
+        for gr in greetings:
+            gt = gr.get("GreetingType", "?")
+            enabled = gr.get("Enabled", "?")
+            play_what = gr.get("PlayWhat", "?")
+            lang = str(gr.get("LanguageCode", "1033"))
+            total_greetings += 1
+
+            # Build audio URL and probe it
+            audio_url = greeting_audio_url(host, oid, gt, lang)
+            status = "?"
+            try:
+                resp = session.head(audio_url, verify=False, timeout=10)
+                status = resp.status_code
+            except Exception as e:
+                status = f"ERR: {e}"
+
+            has_audio = status == 200
+            if has_audio:
+                total_audio += 1
+                handler_has_audio = True
+
+            marker = "AUDIO" if has_audio else "-----"
+            print(f"    [{gt}] Enabled={enabled} PlayWhat={play_what} "
+                  f"HEAD={status} {marker}")
+
+        if handler_has_audio:
+            handlers_with_audio += 1
+        print()
+
+    print(f"{'='*60}")
+    print(f"Summary: {total_audio} audio files found across {handlers_with_audio} handlers")
+    print(f"         {total_greetings} total greetings checked on {len(call_handlers)} handlers")
+    if total_audio > 0:
+        pw_note = "PlayWhat=2" if total_audio > 0 else ""
+        print(f"\nIf audio exists but PlayWhat != 2, the greeting data may not")
+        print(f"match the actual uploaded files. Report this as a bug.")
+
+
 PROBE_ENDPOINTS = [
     # Core
     ("/vmrest/handlers/callhandlers", "Call Handlers"),
@@ -3551,6 +3607,9 @@ def main():
     # probe — test what endpoints exist
     sub_probe = subparsers.add_parser("probe", help="Probe CUPI endpoints to see what's available on this server")
 
+    # audio — probe greeting audio files
+    sub_audio = subparsers.add_parser("audio", help="Probe all handlers for uploaded greeting audio files")
+
     args = parser.parse_args()
 
     if args.command is None or args.command == "generate":
@@ -3565,6 +3624,8 @@ def main():
         cmd_orphans(args)
     elif args.command == "probe":
         cmd_probe(args)
+    elif args.command == "audio":
+        cmd_audio_probe(args)
 
 
 if __name__ == "__main__":
