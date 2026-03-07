@@ -573,9 +573,12 @@ def build_graph(call_handlers, interview_handlers, routing_rules, session, host,
         if schedule_set_map and sched_set_id in schedule_set_map:
             sched_name = schedule_set_map[sched_set_id]
         post_greeting = str(ch.get("PlayPostGreetingRecording", "0"))
+        after_msg_action = str(ch.get("AfterMessageAction", "0"))
         node_warnings = []
         if post_greeting != "0":
             node_warnings.append("'Record your message' prompt is enabled")
+        if after_msg_action == ACTION_HANGUP:
+            node_warnings.append("After-message action is Hangup (caller is disconnected after recording)")
         nodes[oid] = {
             "id": oid,
             "name": name,
@@ -714,6 +717,9 @@ def build_graph(call_handlers, interview_handlers, routing_rules, session, host,
             # Self-referencing loop: menu key routes back to same handler
             if action == ACTION_GOTO and target_id == oid:
                 nodes[oid]["warnings"].append(f"Key {key} routes back to itself")
+            # Take Message on a menu key is a misconfiguration for AA
+            if action == ACTION_TAKE_MSG:
+                nodes[oid]["warnings"].append(f"Key {key} action is Take Message")
             _add_route_edge(nodes, edges, oid, action,
                 target_id,
                 entry.get("TargetConversation", ""),
@@ -722,9 +728,12 @@ def build_graph(call_handlers, interview_handlers, routing_rules, session, host,
         active_keys = [e for e in menu_entries if str(e.get("Action", "0")) != ACTION_IGNORE]
         if active_keys and not has_timeout_key:
             nodes[oid]["warnings"].append("No timeout key (*) configured — callers who press nothing have no path")
-        # Track unlocked keys (allow extension dialing)
+        # Track unlocked keys (allow extension dialing) and digit timeout
         if unlocked_keys:
             nodes[oid]["unlockedKeys"] = unlocked_keys
+            one_key_delay = ch.get("OneKeyDelay", "")
+            if one_key_delay:
+                nodes[oid]["digitTimeoutMs"] = str(one_key_delay)
 
         # Transfer rules
         transfer_rules = fetch_transfer_rules(session, host, oid, name)
@@ -739,11 +748,24 @@ def build_graph(call_handlers, interview_handlers, routing_rules, session, host,
             if str(rule_name_t) == "Alternate" and str(tr_enabled).lower() == "true":
                 nodes[oid]["warnings"].append("Alternate transfer rule is enabled (overrides Standard and Off Hours)")
 
+            # Warn if supervised transfer (should be release for AA handlers)
+            xfer_type = str(tr.get("TransferType", "1"))  # 0=release, 1=supervised
+            if xfer_type != "0" and str(tr_enabled).lower() == "true":
+                nodes[oid]["warnings"].append(f"{rule_name_t} transfer is Supervised (should be Release for auto-attendant)")
+
+            # Build transfer label with type and rings info
+            xfer_rings = str(tr.get("TransferRings", "4"))
+            if xfer_type == "0":
+                xfer_detail = "release"
+            else:
+                xfer_detail = f"ring {xfer_rings}x"
+            xfer_label = f"Xfer:{rule_name_t} ({xfer_detail})"
+
             if target_handler and target_handler in nodes:
                 edges.append({
                     "source": oid,
                     "target": target_handler,
-                    "label": f"Xfer:{rule_name_t}",
+                    "label": xfer_label,
                     "schedule": tr_schedule,
                 })
                 has_transfer_target.add(oid)
@@ -763,12 +785,13 @@ def build_graph(call_handlers, interview_handlers, routing_rules, session, host,
                 edges.append({
                     "source": oid,
                     "target": phone_id,
-                    "label": f"Xfer:{rule_name_t}",
+                    "label": xfer_label,
                     "schedule": tr_schedule,
                 })
                 has_transfer_target.add(oid)
 
         # Greetings (audio URLs + after-greeting routing)
+        has_ignore_digits = False
         greetings = fetch_greetings(session, host, oid, name)
         for gr in greetings:
             greeting_name = gr.get("GreetingType", "Greeting")
@@ -788,6 +811,9 @@ def build_graph(call_handlers, interview_handlers, routing_rules, session, host,
             # Warn on alternate greeting enabled (overrides standard)
             if greeting_name == "Alternate" and enabled:
                 nodes[oid]["warnings"].append("Alternate greeting is enabled (overrides Standard)")
+            # Check if caller input is ignored during this enabled greeting
+            if enabled and str(gr.get("IgnoreDigits", "false")).lower() == "true":
+                has_ignore_digits = True
             # Routing: only follow after-greeting actions for enabled greetings
             if not enabled:
                 continue
@@ -805,6 +831,10 @@ def build_graph(call_handlers, interview_handlers, routing_rules, session, host,
                     "source": oid, "target": target,
                     "label": f"After:{greeting_name}", "schedule": gr_schedule,
                 })
+
+        # Warn if caller input is disabled but handler has active menu keys
+        if has_ignore_digits and active_keys:
+            nodes[oid]["warnings"].append("Caller input disabled during greeting — DTMF keys ignored until greeting finishes")
 
     # Sort audio entries: Standard first, then Off Hours, Holiday, Alternate, rest
     _AUDIO_ORDER = {"Standard": 0, "Off Hours": 1, "Holiday": 2, "Alternate": 3}
@@ -1574,7 +1604,9 @@ function showDetails(d) {{
     }}
 
     if (d.unlockedKeys && d.unlockedKeys.length) {{
-        html += '<div class="detail-row" style="padding:4px 0; color:#2ecc71; font-size:12px;">&#9742; Extension dialing — unlocked keys: <strong>' + d.unlockedKeys.map(k => esc(k)).join(', ') + '</strong></div>';
+        let ukText = '&#9742; Extension dialing — unlocked keys: <strong>' + d.unlockedKeys.map(k => esc(k)).join(', ') + '</strong>';
+        if (d.digitTimeoutMs) ukText += ' (' + esc(d.digitTimeoutMs) + 'ms timeout)';
+        html += '<div class="detail-row" style="padding:4px 0; color:#2ecc71; font-size:12px;">' + ukText + '</div>';
     }}
 
     if (d.warnings && d.warnings.length) {{
@@ -2585,7 +2617,9 @@ function createCard(node, isEntry) {{
     if (node.unlockedKeys && node.unlockedKeys.length) {{
         const row = document.createElement("div");
         row.style.cssText = "padding: 6px 16px; background: #1a2a1a; border-bottom: 1px solid #1a3a1a; color: #2ecc71; font-size: 12px;";
-        row.innerHTML = '&#9742; Extension dialing enabled — unlocked keys: ' + node.unlockedKeys.map(k => '<strong>' + esc(k) + '</strong>').join(', ');
+        let ukHtml = '&#9742; Extension dialing enabled — unlocked keys: ' + node.unlockedKeys.map(k => '<strong>' + esc(k) + '</strong>').join(', ');
+        if (node.digitTimeoutMs) ukHtml += ' (' + esc(node.digitTimeoutMs) + 'ms timeout)';
+        row.innerHTML = ukHtml;
         card.appendChild(row);
     }}
 
