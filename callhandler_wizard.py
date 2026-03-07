@@ -569,11 +569,29 @@ def build_graph(call_handlers, interview_handlers, routing_rules, session, host,
                     "label": f"Key {key}{conv_suffix}",
                     "schedule": "always",
                 })
+            elif action == ACTION_GOTO and not target and conversation:
+                # Conversation without a target handler (SubSignIn, SystemTransfer, etc.)
+                conv_label = CONVERSATION_LABELS.get(conversation, conversation)
+                action_id = f"conv_{conversation}"
+                if action_id not in nodes:
+                    nodes[action_id] = {
+                        "id": action_id,
+                        "name": conv_label,
+                        "extension": "",
+                        "type": "action",
+                        "classification": "normal",
+                    }
+                edges.append({
+                    "source": oid,
+                    "target": action_id,
+                    "label": f"Key {key}",
+                    "schedule": "always",
+                })
             elif action in (ACTION_HANGUP, ACTION_RESTART_GREETING, ACTION_SKIP_GREETING,
                             ACTION_TAKE_MSG, ACTION_ROUTE_NEXT, ACTION_XFER_ALT):
                 # Terminal or self-referencing action — create a label node
                 action_label = ACTION_LABELS.get(action, f"Action {action}")
-                action_id = f"action_{oid}_{key}"
+                action_id = f"action_{action}"
                 if action_id not in nodes:
                     nodes[action_id] = {
                         "id": action_id,
