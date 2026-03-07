@@ -4869,6 +4869,9 @@ def cmd_handler(args):
             xfer_num = me.get("TransferNumber", "")
             extra = f" TransferNumber={xfer_num}" if xfer_num else ""
             print(f"  Key {key}: Action={action} Target={target or 'N/A'}{extra}")
+            if str(action) == "7":
+                for k, v in sorted(me.items()):
+                    print(f"         {k}={v}")
 
         if args.raw:
             print("\n--- Raw Handler JSON ---")
