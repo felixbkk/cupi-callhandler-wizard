@@ -1116,6 +1116,12 @@ tr:hover {{ background: #16213e; }}
 .schedule-btn.active {{ background: #0f3460; border-color: #e94560; color: #fff; }}
 .schedule-label {{ font-size: 13px; color: #888; align-self: center; margin-right: 8px; }}
 .diff-highlight {{ background: #2a1a3e; }}
+.flow-tree {{ background: #16213e; border: 1px solid #0f3460; border-radius: 6px; padding: 16px; margin-bottom: 16px; font-family: monospace; font-size: 13px; line-height: 1.6; white-space: pre; overflow-x: auto; }}
+.flow-tree .flow-root {{ color: #2ecc71; font-weight: 700; }}
+.flow-tree .flow-handler {{ color: #3498db; }}
+.flow-tree .flow-label {{ color: #e94560; }}
+.flow-tree .flow-muted {{ color: #555; }}
+.flow-tree .flow-visited {{ color: #555; font-style: italic; }}
 </style>
 </head>
 <body>
@@ -1132,6 +1138,9 @@ tr:hover {{ background: #16213e; }}
 <button class="schedule-btn" onclick="setSchedule('holiday')">Holiday</button>
 <button class="schedule-btn" onclick="setSchedule('all')">All (raw)</button>
 </div>
+
+<h2>Call Flow Trees</h2>
+<div id="callFlowTrees"></div>
 
 <h2>Call Handlers &amp; Routing</h2>
 <div class="filter-bar">
@@ -1288,6 +1297,67 @@ function renderTable() {{
             .filter(c => counts[c])
             .map(c => '<span class="summary-badge" style="background:' + classColors[c] + '">' + classLabels[c] + ': ' + counts[c] + '</span>')
             .join("");
+
+    renderCallFlowTrees(activeEdges);
+}}
+
+function renderCallFlowTrees(activeEdges) {{
+    const container = document.getElementById("callFlowTrees");
+    // Build adjacency: source -> [{label, target}]
+    const adj = {{}};
+    activeEdges.forEach(e => {{
+        (adj[e.source] = adj[e.source] || []).push({{ label: e.label, target: e.target }});
+    }});
+    // Sort edges: Key entries first (by key), then After:, then Xfer:
+    function edgeSortKey(e) {{
+        if (e.label.startsWith("Key ")) return "0_" + e.label;
+        if (e.label.startsWith("After:")) return "1_" + e.label;
+        return "2_" + e.label;
+    }}
+    Object.values(adj).forEach(edges => edges.sort((a, b) => edgeSortKey(a).localeCompare(edgeSortKey(b))));
+
+    // Find routing rules that connect to call handlers
+    const roots = data.nodes.filter(n => n.type === "routingrule" && (adj[n.id] || []).length > 0);
+    if (!roots.length) {{
+        container.innerHTML = '<p class="muted">No routing rules with connections found.</p>';
+        return;
+    }}
+
+    let html = "";
+    roots.forEach(root => {{
+        const target = (adj[root.id] || [])[0];
+        if (!target) return;
+        const targetNode = nodeMap[target.target];
+        if (!targetNode) return;
+
+        let lines = [];
+        lines.push('<span class="flow-root">' + esc(root.name) + '</span> -> <span class="flow-handler">' + esc(targetNode.name) + (targetNode.extension ? " (" + esc(targetNode.extension) + ")" : "") + '</span>');
+
+        // BFS tree with depth tracking
+        const visited = new Set([root.id]);
+        function walk(nodeId, indent) {{
+            if (!adj[nodeId]) return;
+            adj[nodeId].forEach(edge => {{
+                const tgt = nodeMap[edge.target];
+                const name = tgt ? tgt.name : "?";
+                const ext = tgt && tgt.extension ? " (" + esc(tgt.extension) + ")" : "";
+                const prefix = "  ".repeat(indent);
+                if (visited.has(edge.target)) {{
+                    lines.push(prefix + '<span class="flow-label">[' + esc(edge.label) + ']</span> -> <span class="flow-visited">' + esc(name) + ext + ' (see above)</span>');
+                    return;
+                }}
+                visited.add(edge.target);
+                lines.push(prefix + '<span class="flow-label">[' + esc(edge.label) + ']</span> -> <span class="flow-handler">' + esc(name) + ext + '</span>');
+                walk(edge.target, indent + 1);
+            }});
+        }}
+        visited.add(target.target);
+        walk(target.target, 1);
+
+        html += '<div class="flow-tree">' + lines.join("\n") + '</div>';
+    }});
+
+    container.innerHTML = html;
 }}
 
 // Render schedules table (static)
