@@ -895,11 +895,11 @@ marker {{ fill: #666; }}
 </div>
 <div id="sidebar">
 <h2>{title_prefix}Call Handler Map</h2>
-<a href="index.html" style="color:#1abc9c; font-size:13px;">Home</a> &nbsp;
+<div><a href="index.html" style="color:#1abc9c; font-size:13px;">Home</a> &nbsp;
 <a href="callflow.html" style="color:#1abc9c; font-size:13px;">Call Flow</a> &nbsp;
 <a href="callhandler_report.html" style="color:#1abc9c; font-size:13px;">Handlers &amp; Routing</a> &nbsp;
 <a href="schedules.html" style="color:#1abc9c; font-size:13px;">Schedules</a> &nbsp;
-<a href="test_times.html" style="color:#1abc9c; font-size:13px;">Test Times</a>
+<a href="test_times.html" style="color:#1abc9c; font-size:13px;">Test Times</a></div>
 <div class="controls">
 <h3>Layout</h3>
 <div style="display:flex; gap:6px; flex-wrap:wrap;">
