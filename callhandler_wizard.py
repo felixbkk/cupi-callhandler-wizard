@@ -1383,6 +1383,7 @@ body.light-mode .oid {{ color: #888 !important; }}
 
 /* Audit page */
 body.light-mode .summary-bar .summary-card {{ background: #fff !important; border-color: #d0d7de !important; }}
+body.light-mode a.summary-card:hover {{ border-color: #0969da !important; }}
 body.light-mode .summary-card .label {{ color: #666 !important; }}
 body.light-mode .badge-ok {{ background: #d0d7de !important; color: #666 !important; }}
 body.light-mode .section-empty {{ color: #888 !important; }}
@@ -4089,7 +4090,9 @@ a:hover {{ text-decoration: underline; }}
 .level-warning {{ color: #e67e22; font-weight: 700; }}
 .level-info {{ color: #2ecc71; }}
 .summary-bar {{ display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 24px; }}
-.summary-card {{ background: #16213e; border: 1px solid #0f3460; border-radius: 6px; padding: 14px 20px; min-width: 140px; }}
+.summary-card {{ background: #16213e; border: 1px solid #0f3460; border-radius: 6px; padding: 14px 20px; min-width: 140px; transition: border-color 0.2s; }}
+a.summary-card {{ cursor: pointer; }}
+a.summary-card:hover {{ border-color: #1abc9c; }}
 .summary-card .count {{ font-size: 28px; font-weight: 700; }}
 .summary-card .label {{ font-size: 12px; color: #888; margin-top: 2px; }}
 .summary-card.critical .count {{ color: #e74c3c; }}
@@ -4164,16 +4167,17 @@ const totalIssues = totalWarnings + holidayCritical + holidayWarnings + classifi
 (function() {{
     const bar = document.getElementById("summaryBar");
     const cards = [
-        {{ count: totalIssues, label: "Total Issues", cls: totalIssues > 0 ? (holidayCritical > 0 ? "critical" : "warning") : "clean" }},
-        {{ count: totalWarnings, label: "Handler Warnings", cls: totalWarnings > 0 ? "warning" : "clean" }},
-        {{ count: holidayCritical + holidayWarnings, label: "Holiday Issues", cls: holidayCritical > 0 ? "critical" : (holidayWarnings > 0 ? "warning" : "clean") }},
-        {{ count: classificationCount, label: "Classification", cls: classificationCount > 0 ? "warning" : "clean" }},
-        {{ count: audioIssues, label: "Audio Issues", cls: audioIssues > 0 ? "warning" : "clean" }},
-        {{ count: extDialCount, label: "Ext. Dialing", cls: extDialCount > 0 ? "warning" : "clean" }},
-        {{ count: sysDefaultCount, label: "System Default", cls: sysDefaultCount > 0 ? "warning" : "clean" }},
+        {{ count: totalIssues, label: "Total Issues", cls: totalIssues > 0 ? (holidayCritical > 0 ? "critical" : "warning") : "clean", href: "" }},
+        {{ count: totalWarnings, label: "Handler Warnings", cls: totalWarnings > 0 ? "warning" : "clean", href: "#sec-warnings" }},
+        {{ count: holidayCritical + holidayWarnings, label: "Holiday Issues", cls: holidayCritical > 0 ? "critical" : (holidayWarnings > 0 ? "warning" : "clean"), href: "#sec-holidays" }},
+        {{ count: classificationCount, label: "Classification", cls: classificationCount > 0 ? "warning" : "clean", href: "#sec-classification" }},
+        {{ count: audioIssues, label: "Audio Issues", cls: audioIssues > 0 ? "warning" : "clean", href: "#sec-audio" }},
+        {{ count: extDialCount, label: "Ext. Dialing", cls: extDialCount > 0 ? "warning" : "clean", href: "#sec-extdial" }},
+        {{ count: sysDefaultCount, label: "System Default", cls: sysDefaultCount > 0 ? "warning" : "clean", href: "#sec-sysdefault" }},
     ];
     bar.innerHTML = cards.map(c =>
-        '<div class="summary-card ' + c.cls + '"><div class="count">' + c.count + '</div><div class="label">' + c.label + '</div></div>'
+        c.href ? '<a href="' + c.href + '" class="summary-card ' + c.cls + '" style="text-decoration:none; color:inherit;"><div class="count">' + c.count + '</div><div class="label">' + c.label + '</div></a>'
+               : '<div class="summary-card ' + c.cls + '"><div class="count">' + c.count + '</div><div class="label">' + c.label + '</div></div>'
     ).join("");
 }})();
 
