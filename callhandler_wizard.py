@@ -1923,6 +1923,16 @@ function showDetails(d) {{
         '<div class="detail-row"><span class="detail-label">Type</span><span class="detail-value">' + esc(d.type) + '</span></div>' +
         '<div class="detail-row"><span class="detail-label">Classification</span><span class="detail-value" style="color:' + nodeColor(d) + '">' + esc(classLabels[d.classification] || d.classification) + '</span></div>';
 
+    if (d.conditions && d.conditions.length) {{
+        html += '<div class="detail-row" style="padding:6px 0;"><span class="detail-label">Conditions</span><span class="detail-value" style="font-size:12px;">' +
+            d.conditions.map(c => esc(c.param) + ' ' + esc(c.op) + ' <strong>' + esc(c.value) + '</strong>').join('<br>') + '</span></div>';
+    }}
+    if (d.ruleType) {{
+        html += '<div class="detail-row"><span class="detail-label">Rule Type</span><span class="detail-value">' + esc(d.ruleType) + '</span></div>';
+    }}
+    if (d.ruleState && d.ruleState !== "Active") {{
+        html += '<div class="detail-row"><span class="detail-label">State</span><span class="detail-value" style="color:#e74c3c;">' + esc(d.ruleState) + '</span></div>';
+    }}
     if (d.scheduleName) {{
         html += '<div class="detail-row"><span class="detail-label">Schedule</span><span class="detail-value">' + esc(d.scheduleName) + '</span></div>';
     }}
