@@ -4030,8 +4030,11 @@ document.getElementById("badge-sysdefault").innerHTML = badge(sysDefaultCount, "
 </html>'''
 
 
-def generate_index_html(site_name=""):
+def generate_index_html(site_name="", run_utc=None):
     title_prefix = f"{site_name} — " if site_name else ""
+    if run_utc is None:
+        from datetime import timezone
+        run_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     return f'''<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -4054,7 +4057,7 @@ h1 {{ color: #e94560; font-size: 24px; margin-bottom: 8px; }}
 <body>
 <div class="index">
 <h1>{title_prefix}Call Handler Reports</h1>
-<p class="subtitle">Choose a view to explore the call handler routing data.</p>
+<p class="subtitle">Generated {run_utc}</p>
 <a href="callflow.html" class="card">
 <h2>Call Flow Explorer</h2>
 <p>Trace calls step by step — select an entry point, click key presses to drill down through the IVR.</p>
@@ -4192,11 +4195,13 @@ def cmd_generate(args):
     tee = TeeLogger(log_path)
     sys.stdout = tee
     try:
+        from datetime import timezone
+        run_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
         print(f"Log: {log_path}")
         print(f"Site: {site_id} ({site_name})")
         print(f"Host: {host}")
         print(f"User: {args.user}")
-        print(f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"Time: {run_utc}")
         print()
 
         timings = []
@@ -4384,7 +4389,7 @@ def cmd_generate(args):
         with open(audit_html_path, "w", encoding="utf-8") as f:
             f.write(audit_html)
 
-        idx_html = generate_index_html(site_name=site_name)
+        idx_html = generate_index_html(site_name=site_name, run_utc=run_utc)
         with open(index_path, "w", encoding="utf-8") as f:
             f.write(idx_html)
 
