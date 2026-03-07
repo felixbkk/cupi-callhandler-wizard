@@ -1585,12 +1585,7 @@ function renderCallFlowTrees(activeEdges) {{
         return;
     }}
     data.holidays.forEach(s => {{
-        if (!s.entries.length) {{
-            const tr = document.createElement("tr");
-            tr.innerHTML = '<td>' + esc(s.name) + '</td><td colspan="3" class="muted">No holidays configured</td>';
-            tbody.appendChild(tr);
-            return;
-        }}
+        if (!s.entries.length) return;
         s.entries.forEach(h => {{
             const tr = document.createElement("tr");
             tr.innerHTML = '<td>' + esc(s.name) + '</td><td>' + esc(h.name) + '</td><td>' + esc(h.start) + '</td><td>' + esc(h.end) + '</td>';
