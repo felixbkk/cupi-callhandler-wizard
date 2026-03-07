@@ -149,6 +149,7 @@ The tool automatically detects and warns about common auto-attendant misconfigur
 | Circular routing | Two handlers route to each other with no exit |
 | Record your message prompt | "Record at the tone" prompt enabled on AA handler |
 | Caller input disabled | DTMF keys ignored during greeting playback |
+| Schedule gap | Reachable during Standard but not Off Hours, or vice versa |
 
 Warnings are shown in the console during generation, on call flow cards, and in the graph sidebar.
 

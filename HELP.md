@@ -360,6 +360,7 @@ The wizard automatically detects common auto-attendant misconfigurations. Warnin
 | **Circular routing** | Two handlers route to each other with no exit. | Callers bounce between two handlers with no way out. |
 | **Record your message prompt** | The "Record at the tone" prompt is enabled. | On an auto-attendant handler, this prompt is usually unwanted — callers aren't expecting to leave a voicemail. |
 | **Caller input disabled** | IgnoreDigits is true on a greeting that has active menu keys. | DTMF keys are ignored during greeting playback — callers can't press anything until the greeting finishes. This can be intentional (force callers to listen) but is often a misconfiguration. |
+| **Schedule gap** | Handler is reachable during Standard hours but not Off Hours (or vice versa). | This handler exists in the call flow during one schedule but callers can't reach it during the other. This may be intentional (e.g., a daytime-only department) or it may indicate a missing route — verify the Off Hours greeting on the parent handler routes callers appropriately. |
 
 ---
 

@@ -162,6 +162,7 @@ Per-schedule reachability (standard, off hours, holiday) is computed separately 
 | Circular routing | A->B->A with no exit from one side |
 | Record your message | `PlayPostGreetingRecording` enabled |
 | Caller input disabled | `IgnoreDigits` true on enabled greeting with active menu keys |
+| Schedule gap | Handler reachable during Standard but not Off Hours, or vice versa |
 
 ## CLI Commands
 

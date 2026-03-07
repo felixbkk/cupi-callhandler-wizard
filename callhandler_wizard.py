@@ -1061,6 +1061,22 @@ def build_graph(call_handlers, interview_handlers, routing_rules, session, host,
         primary_id = max(root_handlers, key=lambda x: len(incoming[x[0]]))[0]
         nodes[primary_id]["primary"] = True
 
+    # Schedule gap warnings: handler reachable in some schedules but not others
+    for nid, node in nodes.items():
+        if node["type"] != "callhandler":
+            continue
+        if node["classification"] in ("orphan", "unreachable"):
+            continue
+        r = node.get("reachable", {})
+        std = r.get("standard", False)
+        off = r.get("offhours", False)
+        if std and not off:
+            node.setdefault("warnings", []).append(
+                "Reachable during Standard hours but not Off Hours — is this intentional?")
+        elif off and not std:
+            node.setdefault("warnings", []).append(
+                "Reachable during Off Hours but not Standard hours — is this intentional?")
+
     return list(nodes.values()), edges
 
 
