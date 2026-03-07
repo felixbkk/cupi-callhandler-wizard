@@ -670,9 +670,9 @@ def build_graph(call_handlers, interview_handlers, routing_rules, session, host,
                 continue
             greeting_name = gr.get("GreetingType", "Greeting")
             language_code = str(gr.get("LanguageCode", "1033"))
-            play_what = str(gr.get("PlayWhat", ""))  # 0=nothing, 1=system default, 2=custom recording
+            play_what = str(gr.get("PlayWhat", ""))  # 0=nothing, 1=default/uploaded, 2=custom recording
             gr_schedule = GREETING_SCHEDULE.get(greeting_name, "always")
-            if play_what == "2":
+            if play_what in ("1", "2"):
                 audio_url = greeting_audio_url(host, oid, greeting_name, language_code)
                 nodes[oid]["audio"].append({
                     "greeting": greeting_name,
