@@ -1550,7 +1550,7 @@ function renderCallFlowTrees(activeEdges) {{
         visited.add(target.target);
         walk(target.target, 1);
 
-        html += '<div class="flow-tree">' + lines.join("\n") + '</div>';
+        html += '<div class="flow-tree">' + lines.join("\\n") + '</div>';
     }});
 
     container.innerHTML = html;
@@ -1607,7 +1607,7 @@ renderTable();
 // --- Debug Tools ---
 function toggleDebug() {{
     const panel = document.getElementById("debugPanel");
-    panel.style.display = panel.style.display === "none" ? "block" : "none";
+    panel.style.display = panel.style.display === "block" ? "none" : "block";
 }}
 
 function debugLookup() {{
