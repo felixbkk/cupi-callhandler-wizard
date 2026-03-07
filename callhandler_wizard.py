@@ -139,6 +139,28 @@ def fetch_call_handlers(session, host):
     return all_handlers
 
 
+def fetch_directory_handlers(session, host):
+    print("Fetching directory handlers...")
+    path = "/vmrest/handlers/directoryhandlers"
+    all_handlers = []
+    page = 0
+    while True:
+        params = {"rowsPerPage": ROWS_PER_PAGE, "pageNumber": page}
+        data = api_get(session, host, path, params)
+        total = int(data.get("@total", 0))
+        if total == 0:
+            break
+        handlers = data.get("DirectoryHandler", [])
+        if isinstance(handlers, dict):
+            handlers = [handlers]
+        all_handlers.extend(handlers)
+        print(f"  Fetched {len(all_handlers)}/{total} directory handlers")
+        if len(all_handlers) >= total:
+            break
+        page += 1
+    return all_handlers
+
+
 def fetch_interview_handlers(session, host):
     print("Fetching interview handlers...")
     path = "/vmrest/handlers/interviewhandlers"
@@ -436,10 +458,13 @@ def greeting_audio_url(host, handler_id, greeting_type, language_code="1033"):
 
 
 def build_graph(call_handlers, interview_handlers, routing_rules, session, host,
-                schedule_set_map=None):
+                schedule_set_map=None, directory_handlers=None):
     nodes = {}
     edges = []
     handler_map = {}  # ObjectId → handler info
+    dir_handler_map = {}  # ObjectId → DisplayName for directory handlers
+    for dh in (directory_handlers or []):
+        dir_handler_map[dh.get("ObjectId", "")] = dh.get("DisplayName", "Unknown")
 
     # Add call handler nodes
     for ch in call_handlers:
@@ -464,7 +489,7 @@ def build_graph(call_handlers, interview_handlers, routing_rules, session, host,
             "postGreeting": post_greeting != "0",
         }
 
-    # Add interview handler nodes
+    # Add interview handler nodes and after-message routing
     for ih in interview_handlers:
         oid = ih.get("ObjectId", "")
         name = ih.get("DisplayName", "Unknown")
@@ -475,6 +500,166 @@ def build_graph(call_handlers, interview_handlers, routing_rules, session, host,
             "type": "interview",
             "classification": "normal",
         }
+        # After-message action routing
+        after_action = str(ih.get("AfterMessageAction", "0"))
+        after_target = ih.get("AfterMessageTargetHandlerObjectId", "")
+        after_conv = ih.get("AfterMessageTargetConversation", "")
+        if after_action == ACTION_GOTO and after_target:
+            if after_target not in nodes:
+                node_type = "callhandler"
+                if after_conv == "AD":
+                    node_type = "directory"
+                elif after_conv == "PHInterview":
+                    node_type = "interview"
+                target_name = dir_handler_map.get(after_target, "")
+                if not target_name:
+                    conv_label = CONVERSATION_LABELS.get(after_conv, "")
+                    if conv_label and conv_label not in ("Transfer", "Greeting"):
+                        target_name = f"{conv_label} ({after_target[:8]})"
+                    else:
+                        target_name = f"Unknown ({after_target[:8]})"
+                nodes[after_target] = {
+                    "id": after_target,
+                    "name": target_name,
+                    "extension": "",
+                    "type": node_type,
+                    "classification": "normal",
+                }
+            conv_suffix = ""
+            if after_conv and after_conv not in ("PHTransfer", "PHGreeting"):
+                conv_suffix = f" [{CONVERSATION_LABELS.get(after_conv, after_conv)}]"
+            edges.append({
+                "source": oid,
+                "target": after_target,
+                "label": f"After Interview{conv_suffix}",
+                "schedule": "always",
+            })
+        elif after_action == ACTION_GOTO and not after_target and after_conv:
+            conv_label = CONVERSATION_LABELS.get(after_conv, after_conv)
+            action_node_id = f"conv_{after_conv}"
+            if action_node_id not in nodes:
+                nodes[action_node_id] = {
+                    "id": action_node_id,
+                    "name": conv_label,
+                    "extension": "",
+                    "type": "action",
+                    "classification": "normal",
+                }
+            edges.append({
+                "source": oid,
+                "target": action_node_id,
+                "label": "After Interview",
+                "schedule": "always",
+            })
+        elif after_action == ACTION_HANGUP:
+            action_node_id = f"action_{ACTION_HANGUP}"
+            if action_node_id not in nodes:
+                nodes[action_node_id] = {
+                    "id": action_node_id,
+                    "name": "Hangup",
+                    "extension": "",
+                    "type": "action",
+                    "classification": "normal",
+                }
+            edges.append({
+                "source": oid,
+                "target": action_node_id,
+                "label": "After Interview",
+                "schedule": "always",
+            })
+
+    # Add directory handler nodes and exit routing edges
+    _DIR_EXIT_FIELDS = [
+        ("Exit", "Exit (*/# key)"),
+        ("NoInput", "No Input"),
+        ("NoSelection", "No Selection"),
+        ("Zero", "Press 0"),
+    ]
+    for dh in (directory_handlers or []):
+        oid = dh.get("ObjectId", "")
+        name = dh.get("DisplayName", "Unknown")
+        ext = dh.get("DtmfAccessId", "")
+        if oid not in nodes:
+            nodes[oid] = {
+                "id": oid,
+                "name": name,
+                "extension": ext,
+                "type": "directory",
+                "classification": "normal",
+            }
+        else:
+            # Update existing stub node with real data
+            nodes[oid]["name"] = name
+            nodes[oid]["extension"] = ext
+        # Add edges for exit/noinput/noselection/zero actions
+        for prefix, label in _DIR_EXIT_FIELDS:
+            action = str(dh.get(f"{prefix}Action", "0"))
+            target = dh.get(f"{prefix}TargetHandlerObjectId", "")
+            conversation = dh.get(f"{prefix}TargetConversation", "")
+            if action == ACTION_GOTO and target:
+                if target not in nodes:
+                    node_type = "callhandler"
+                    if conversation == "AD":
+                        node_type = "directory"
+                    elif conversation == "PHInterview":
+                        node_type = "interview"
+                    target_name = dir_handler_map.get(target, "")
+                    if not target_name:
+                        conv_label = CONVERSATION_LABELS.get(conversation, "")
+                        if conv_label and conv_label not in ("Transfer", "Greeting"):
+                            target_name = f"{conv_label} ({target[:8]})"
+                        else:
+                            target_name = f"Unknown ({target[:8]})"
+                    nodes[target] = {
+                        "id": target,
+                        "name": target_name,
+                        "extension": "",
+                        "type": node_type,
+                        "classification": "normal",
+                    }
+                conv_suffix = ""
+                if conversation and conversation not in ("PHTransfer", "PHGreeting"):
+                    conv_suffix = f" [{CONVERSATION_LABELS.get(conversation, conversation)}]"
+                edges.append({
+                    "source": oid,
+                    "target": target,
+                    "label": f"{label}{conv_suffix}",
+                    "schedule": "always",
+                })
+            elif action == ACTION_GOTO and not target and conversation:
+                # Targetless conversation (SystemTransfer, SubSignIn, etc.)
+                conv_label = CONVERSATION_LABELS.get(conversation, conversation)
+                action_node_id = f"conv_{conversation}"
+                if action_node_id not in nodes:
+                    nodes[action_node_id] = {
+                        "id": action_node_id,
+                        "name": conv_label,
+                        "extension": "",
+                        "type": "action",
+                        "classification": "normal",
+                    }
+                edges.append({
+                    "source": oid,
+                    "target": action_node_id,
+                    "label": label,
+                    "schedule": "always",
+                })
+            elif action == ACTION_HANGUP:
+                action_node_id = f"action_{ACTION_HANGUP}"
+                if action_node_id not in nodes:
+                    nodes[action_node_id] = {
+                        "id": action_node_id,
+                        "name": "Hangup",
+                        "extension": "",
+                        "type": "action",
+                        "classification": "normal",
+                    }
+                edges.append({
+                    "source": oid,
+                    "target": action_node_id,
+                    "label": label,
+                    "schedule": "always",
+                })
 
     # Track which handler OIDs are targeted by routing rules
     routing_targets = set()
@@ -550,9 +735,13 @@ def build_graph(call_handlers, interview_handlers, routing_rules, session, host,
                     elif conversation == "PHInterview":
                         node_type = "interview"
                     conv_label = CONVERSATION_LABELS.get(conversation, "")
-                    target_name = f"Unknown ({target[:8]})"
-                    if conv_label and conv_label not in ("Transfer", "Greeting"):
+                    # Use real name from directory handler lookup
+                    if node_type == "directory" and target in dir_handler_map:
+                        target_name = dir_handler_map[target]
+                    elif conv_label and conv_label not in ("Transfer", "Greeting"):
                         target_name = f"{conv_label} ({target[:8]})"
+                    else:
+                        target_name = f"Unknown ({target[:8]})"
                     nodes[target] = {
                         "id": target,
                         "name": target_name,
@@ -1826,6 +2015,7 @@ def cmd_generate(args):
     try:
         call_handlers = fetch_call_handlers(session, host)
         interview_handlers = fetch_interview_handlers(session, host)
+        directory_handlers = fetch_directory_handlers(session, host)
         routing_rules = fetch_routing_rules(session, host)
     except requests.exceptions.ConnectionError as e:
         print(f"Error: Could not connect to {host}: {e}")
@@ -1858,6 +2048,7 @@ def cmd_generate(args):
 
     print(f"\nFound {len(call_handlers)} call handlers, "
           f"{len(interview_handlers)} interview handlers, "
+          f"{len(directory_handlers)} directory handlers, "
           f"{len(routing_rules)} routing rules, "
           f"{len(holiday_schedules)} holiday schedules, "
           f"{len(schedules)} schedules, "
@@ -1865,7 +2056,8 @@ def cmd_generate(args):
 
     print("\nBuilding graph (fetching menu entries, transfer rules, greetings, rule conditions)...")
     nodes, edges = build_graph(call_handlers, interview_handlers, routing_rules, session, host,
-                               schedule_set_map=schedule_set_map)
+                               schedule_set_map=schedule_set_map,
+                               directory_handlers=directory_handlers)
 
     # Summary
     classifications = {}
@@ -1965,6 +2157,7 @@ PROBE_ENDPOINTS = [
     # Core
     ("/vmrest/handlers/callhandlers", "Call Handlers"),
     ("/vmrest/handlers/interviewhandlers", "Interview Handlers"),
+    ("/vmrest/handlers/directoryhandlers", "Directory Handlers"),
     ("/vmrest/routingrules", "Routing Rules"),
     ("/vmrest/routingruleconditions", "Routing Rule Conditions"),
     # Schedules
@@ -2163,6 +2356,7 @@ def cmd_orphans(args):
     try:
         call_handlers = fetch_call_handlers(session, host)
         interview_handlers = fetch_interview_handlers(session, host)
+        directory_handlers = fetch_directory_handlers(session, host)
         routing_rules = fetch_routing_rules(session, host)
     except requests.exceptions.ConnectionError as e:
         print(f"Error: Could not connect to {host}: {e}")
@@ -2172,7 +2366,8 @@ def cmd_orphans(args):
         sys.exit(1)
 
     print("\nBuilding graph...")
-    nodes, edges = build_graph(call_handlers, interview_handlers, routing_rules, session, host)
+    nodes, edges = build_graph(call_handlers, interview_handlers, routing_rules, session, host,
+                               directory_handlers=directory_handlers)
 
     # Group by classification
     by_class = {}
