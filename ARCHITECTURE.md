@@ -182,7 +182,7 @@ All HTML files are written to `reports/<SiteName>_<timestamp>/`. Pages are self-
 
 | File | Generator | Dependencies |
 |------|-----------|-------------|
-| `index.html` | `generate_index_html` | None (links to other pages) |
+| `index.html` | `generate_index_html` | `cities.json` (flag lookup) |
 | `callhandler_map.html` | `generate_html` | D3.js (bundled from `resources/`) |
 | `callhandler_report.html` | `generate_table_html` | None (pure HTML/CSS/JS) |
 | `callflow.html` | `generate_callflow_html` | None (pure HTML/CSS/JS, supports deep linking) |
@@ -190,6 +190,7 @@ All HTML files are written to `reports/<SiteName>_<timestamp>/`. Pages are self-
 | `schedules.html` | `generate_schedules_html` | None |
 | `test_times.html` | `generate_test_times_html` | None |
 | `audit.html` | `generate_audit_html` | None (categorized audit findings) |
+| `audit.log` | N/A (text file) | Text summary of all audit findings |
 
 ### Shared Features Across Pages
 
@@ -216,6 +217,7 @@ All external dependencies are stored in `resources/`:
 | `charset_normalizer-*.whl` | Encoding detection (requests dependency) |
 | `idna-*.whl` | Internationalized domain names (requests dependency) |
 | `urllib3-*.whl` | HTTP connection pooling (requests dependency) |
+| `cities.json` | City-to-country-flag mapping for index page display |
 
 All Python wheels are pure Python (`py3-none-any`) and work on any OS without compilation.
 
@@ -244,4 +246,6 @@ Reports can be viewed on any machine with a browser — no server or internet ne
 - **Audio detection** -- Greetings with `PlayWhat` of 1 or 2 are included (both have uploaded audio on typical CUC servers)
 - **Smart endpoint fallback** -- Sub-resource endpoints that return 404 on first try are skipped for remaining handlers
 - **Pagination** -- All list endpoints are fetched with pagination handling
+- **Parallel fetching** -- Per-handler sub-resources (menu entries, transfer rules, greetings) are fetched with ThreadPoolExecutor(8); audio downloads use ThreadPoolExecutor(4) with retry
+- **City flag lookup** -- Site name is matched against bundled `cities.json` to display an emoji flag on the index page
 - **Console logging** -- All output is tee'd to `run.log` in the report directory

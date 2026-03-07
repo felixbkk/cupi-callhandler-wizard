@@ -876,24 +876,36 @@ def build_graph(call_handlers, interview_handlers, routing_rules, session, host,
     t_xfer_total = 0.0
     t_greet_total = 0.0
 
+    def _fetch_with_retry(fetch_fn, *args, max_retries=2):
+        """Call a fetch function with retry on timeout."""
+        for attempt in range(max_retries + 1):
+            try:
+                return fetch_fn(*args)
+            except (requests.exceptions.ReadTimeout, requests.exceptions.ConnectionError):
+                if attempt < max_retries:
+                    time.sleep(1)
+                    continue
+                print(f"  Warning: {fetch_fn.__name__} timed out for '{args[3]}' after {max_retries + 1} attempts")
+                return []
+
     def _fetch_handler_trio(ch):
         """Fetch menu entries, transfer rules, and greetings in parallel."""
         oid = ch.get("ObjectId", "")
         name = ch.get("DisplayName", "Unknown")
         t1 = time.perf_counter()
-        menu = fetch_menu_entries(session, host, oid, name)
+        menu = _fetch_with_retry(fetch_menu_entries, session, host, oid, name)
         t_menu = time.perf_counter() - t1
         t1 = time.perf_counter()
-        xfer = fetch_transfer_rules(session, host, oid, name)
+        xfer = _fetch_with_retry(fetch_transfer_rules, session, host, oid, name)
         t_xfer = time.perf_counter() - t1
         t1 = time.perf_counter()
-        greet = fetch_greetings(session, host, oid, name)
+        greet = _fetch_with_retry(fetch_greetings, session, host, oid, name)
         t_greet = time.perf_counter() - t1
         return oid, name, ch, menu, xfer, greet, t_menu, t_xfer, t_greet
 
-    # Use thread pool — CUC servers handle ~8 concurrent connections well
+    # Use thread pool — keep concurrency moderate to avoid overwhelming CUC
     handler_results = []
-    with ThreadPoolExecutor(max_workers=8) as pool:
+    with ThreadPoolExecutor(max_workers=4) as pool:
         futures = {pool.submit(_fetch_handler_trio, ch): ch for ch in call_handlers}
         done_count = 0
         for future in as_completed(futures):

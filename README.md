@@ -34,7 +34,7 @@ Output is written to `reports/<SiteName>_<timestamp>/` containing:
 
 | File | Description |
 |------|-------------|
-| `index.html` | Landing page with links to all reports |
+| `index.html` | Landing page with city flag, UTC timestamp, report links, and CUC admin login |
 | `callhandler_map.html` | Interactive D3.js force-directed graph |
 | `callhandler_report.html` | Searchable handler table with routing rules, debug tools, audio playback |
 | `callflow.html` | Interactive card-based call flow with deep linking |
@@ -44,6 +44,7 @@ Output is written to `reports/<SiteName>_<timestamp>/` containing:
 | `audit.html` | Categorized audit findings: warnings, holidays, classification, audio |
 | `audio/` | Downloaded greeting audio WAV files for inline playback |
 | `d3.v7.min.js` | Local D3 copy for offline use |
+| `audit.log` | Text summary of all audit findings |
 | `run.log` | Console output log for the generation run |
 
 ### CLI Debug Commands

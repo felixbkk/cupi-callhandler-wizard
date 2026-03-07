@@ -123,7 +123,7 @@ Reports are generated into `reports/<SiteName>_<timestamp>/` and are fully self-
 
 **File:** `index.html`
 
-The landing page with cards linking to each report view. Each card has a brief description of what the page shows. This is the page that opens automatically after generation.
+The landing page showing the site name with a country flag emoji (matched from the bundled city database), generation timestamp in UTC, and cards linking to each report view. Includes a Cisco Unity Connection Admin login link at the bottom. This is the page that opens automatically after generation.
 
 ---
 
