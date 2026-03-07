@@ -1006,6 +1006,14 @@ svg.append("defs").append("marker")
     .attr("d", "M0,-5L10,0L0,5")
     .attr("fill", "#666");
 
+// Click background to clear selection
+svg.on("click", function(event) {{
+    if (event.target.tagName !== "circle") {{
+        clearHighlight();
+        document.getElementById("node-details").innerHTML = '<h3>Node Details</h3><p style="font-size:12px; color:#666;">Click a node to see details</p>';
+    }}
+}});
+
 // BFS depth from root nodes for hierarchical/radial layouts
 const adj = {{}};
 graphData.nodes.forEach(n => adj[n.id] = []);
@@ -1139,7 +1147,10 @@ const node = g.append("g")
         .on("start", dragstarted)
         .on("drag", dragged)
         .on("end", dragended))
-    .on("click", (event, d) => showDetails(d))
+    .on("click", (event, d) => {{
+        event.stopPropagation();
+        showDetails(d);
+    }})
     .on("dblclick", (event, d) => {{
         d.fx = null;
         d.fy = null;
@@ -1174,22 +1185,36 @@ simulation.on("tick", () => {{
         .attr("y", d => d.y);
 }});
 
+let _hasDragged = false;
+let _wasPinned = false;
+
 function dragstarted(event) {{
     if (!event.active) simulation.alphaTarget(0.3).restart();
+    _wasPinned = event.subject.fx != null;
+    _hasDragged = false;
     event.subject.fx = event.subject.x;
     event.subject.fy = event.subject.y;
 }}
 
 function dragged(event) {{
+    _hasDragged = true;
     event.subject.fx = event.x;
     event.subject.fy = event.y;
 }}
 
 function dragended(event) {{
     if (!event.active) simulation.alphaTarget(0);
-    // Pin node where it was dropped
-    event.subject.fx = event.x;
-    event.subject.fy = event.y;
+    if (_hasDragged) {{
+        // Actually moved — pin it
+        event.subject.fx = event.x;
+        event.subject.fy = event.y;
+    }} else {{
+        // Just a click — restore original pin state
+        if (!_wasPinned) {{
+            event.subject.fx = null;
+            event.subject.fy = null;
+        }}
+    }}
     updatePinIndicators();
 }}
 
@@ -1207,30 +1232,111 @@ const classLabels = {{
 }};
 
 function showDetails(d) {{
+    const esc = s => {{ const el = document.createElement("span"); el.textContent = s || ""; return el.innerHTML; }};
+
+    const outgoing = graphData.links.filter(l => {{
+        const sid = typeof l.source === "object" ? l.source.id : l.source;
+        return sid === d.id;
+    }});
+    const incoming = graphData.links.filter(l => {{
+        const tid = typeof l.target === "object" ? l.target.id : l.target;
+        return tid === d.id;
+    }});
+
+    let html = '<h3>Node Details</h3>' +
+        '<div class="detail-row"><span class="detail-label">Display Name</span><span class="detail-value">' + esc(d.name) + '</span></div>' +
+        '<div class="detail-row"><span class="detail-label">Extension</span><span class="detail-value">' + esc(d.extension || "N/A") + '</span></div>' +
+        '<div class="detail-row"><span class="detail-label">Type</span><span class="detail-value">' + esc(d.type) + '</span></div>' +
+        '<div class="detail-row"><span class="detail-label">Classification</span><span class="detail-value" style="color:' + nodeColor(d) + '">' + esc(classLabels[d.classification] || d.classification) + '</span></div>';
+
+    if (d.scheduleName) {{
+        html += '<div class="detail-row"><span class="detail-label">Schedule</span><span class="detail-value">' + esc(d.scheduleName) + '</span></div>';
+    }}
+
+    if (d.audio && d.audio.length) {{
+        html += '<h3 style="margin-top:12px;">Audio</h3>';
+        d.audio.forEach(a => {{
+            html += '<div class="detail-row" style="padding:2px 0;"><a href="' + esc(a.url) + '" target="_blank" style="color:#1abc9c; font-size:12px; text-decoration:none;">&#9835; ' + esc(a.greeting) + ' greeting</a></div>';
+        }});
+    }}
+
+    if (incoming.length) {{
+        html += '<h3 style="margin-top:12px;">Incoming (' + incoming.length + ')</h3>';
+        incoming.forEach(l => {{
+            const src = typeof l.source === "object" ? l.source : graphData.nodes.find(n => n.id === l.source);
+            const srcId = src ? src.id : null;
+            html += '<div class="detail-row rel-link" style="padding:2px 0; cursor:pointer;" data-node="' + (srcId || '') + '">' +
+                '<span class="detail-value" style="font-size:12px;"><span style="color:#888;">' + esc(l.label || '') + '</span> &larr; <strong style="color:#3498db;">' + esc(src ? src.name : "?") + '</strong></span></div>';
+        }});
+    }}
+
+    if (outgoing.length) {{
+        html += '<h3 style="margin-top:12px;">Outgoing (' + outgoing.length + ')</h3>';
+        outgoing.forEach(l => {{
+            const tgt = typeof l.target === "object" ? l.target : graphData.nodes.find(n => n.id === l.target);
+            const tgtId = tgt ? tgt.id : null;
+            html += '<div class="detail-row rel-link" style="padding:2px 0; cursor:pointer;" data-node="' + (tgtId || '') + '">' +
+                '<span class="detail-value" style="font-size:12px;"><span style="color:#888;">' + esc(l.label || '') + '</span> &rarr; <strong style="color:#3498db;">' + esc(tgt ? tgt.name : "?") + '</strong></span></div>';
+        }});
+    }}
+
+    if (!incoming.length && !outgoing.length) {{
+        html += '<div class="detail-row"><span class="detail-value" style="color:#666; font-size:12px;">No connections</span></div>';
+    }}
+
     const details = document.getElementById("node-details");
-    details.innerHTML = `
-        <h3>Node Details</h3>
-        <div class="detail-row">
-            <span class="detail-label">Display Name</span>
-            <span class="detail-value">${{d.name}}</span>
-        </div>
-        <div class="detail-row">
-            <span class="detail-label">Extension / DTMF Access ID</span>
-            <span class="detail-value">${{d.extension || "N/A"}}</span>
-        </div>
-        <div class="detail-row">
-            <span class="detail-label">Object ID</span>
-            <span class="detail-value">${{d.id}}</span>
-        </div>
-        <div class="detail-row">
-            <span class="detail-label">Type</span>
-            <span class="detail-value">${{d.type}}</span>
-        </div>
-        <div class="detail-row">
-            <span class="detail-label">Classification</span>
-            <span class="detail-value" style="color:${{nodeColor(d)}}">${{classLabels[d.classification] || d.classification}}</span>
-        </div>
-    `;
+    details.innerHTML = html;
+
+    // Make relationship names clickable — select that node
+    details.querySelectorAll(".rel-link").forEach(el => {{
+        el.addEventListener("click", () => {{
+            const nid = el.dataset.node;
+            const target = graphData.nodes.find(n => n.id === nid);
+            if (target) showDetails(target);
+        }});
+        el.addEventListener("mouseenter", () => el.style.background = "#0f3460");
+        el.addEventListener("mouseleave", () => el.style.background = "");
+    }});
+
+    highlightConnections(d);
+}}
+
+function highlightConnections(d) {{
+    const connIds = new Set([d.id]);
+    graphData.links.forEach(l => {{
+        const sid = typeof l.source === "object" ? l.source.id : l.source;
+        const tid = typeof l.target === "object" ? l.target.id : l.target;
+        if (sid === d.id) connIds.add(tid);
+        if (tid === d.id) connIds.add(sid);
+    }});
+    node.transition().duration(200)
+        .attr("opacity", n => connIds.has(n.id) ? 1 : 0.12);
+    label.transition().duration(200)
+        .attr("opacity", n => connIds.has(n.id) ? 1 : 0.12);
+    link.transition().duration(200)
+        .attr("stroke-opacity", l => {{
+            const sid = typeof l.source === "object" ? l.source.id : l.source;
+            const tid = typeof l.target === "object" ? l.target.id : l.target;
+            return (sid === d.id || tid === d.id) ? 0.9 : 0.04;
+        }})
+        .attr("stroke-width", l => {{
+            const sid = typeof l.source === "object" ? l.source.id : l.source;
+            const tid = typeof l.target === "object" ? l.target.id : l.target;
+            return (sid === d.id || tid === d.id) ? 2.5 : 1.5;
+        }});
+    linkLabel.transition().duration(200)
+        .attr("opacity", l => {{
+            const sid = typeof l.source === "object" ? l.source.id : l.source;
+            const tid = typeof l.target === "object" ? l.target.id : l.target;
+            return (sid === d.id || tid === d.id) ? 1 : 0.04;
+        }});
+}}
+
+function clearHighlight() {{
+    node.transition().duration(200).attr("opacity", 1);
+    label.transition().duration(200).attr("opacity", 1);
+    link.transition().duration(200).attr("stroke-opacity", 0.5).attr("stroke-width", 1.5);
+    linkLabel.transition().duration(200).attr("opacity", 1);
 }}
 </script>
 </body>
