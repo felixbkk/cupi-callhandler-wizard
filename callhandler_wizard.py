@@ -19,7 +19,11 @@ from collections import deque
 from datetime import datetime
 from urllib.parse import urlparse
 
+import ssl
+
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.ssl_ import create_urllib3_context
 
 requests.packages.urllib3.disable_warnings(
     requests.packages.urllib3.exceptions.InsecureRequestWarning
@@ -1896,6 +1900,20 @@ def ping_check(host):
     print(f"  {hostname} is reachable.")
 
 
+class _LegacySSLAdapter(HTTPAdapter):
+    """HTTPS adapter that tolerates legacy TLS on older CUC servers."""
+
+    def init_poolmanager(self, *args, **kwargs):
+        ctx = create_urllib3_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        # Allow legacy renegotiation and older ciphers for legacy servers
+        ctx.options |= ssl.OP_LEGACY_SERVER_CONNECT
+        ctx.set_ciphers("DEFAULT:@SECLEVEL=1")
+        kwargs["ssl_context"] = ctx
+        return super().init_poolmanager(*args, **kwargs)
+
+
 def connect(args):
     """Create an authenticated session from CLI args."""
     host = args.host.rstrip("/")
@@ -1903,6 +1921,7 @@ def connect(args):
     password = getpass.getpass(f"Password for {args.user}@{host}: ")
     session = requests.Session()
     session.auth = (args.user, password)
+    session.mount("https://", _LegacySSLAdapter())
     return session, host
 
 
