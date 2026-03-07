@@ -5272,13 +5272,13 @@ def main():
     )
     parser.add_argument("--host", required=True, help="CUC server URL (e.g. https://10.212.111.17)")
     parser.add_argument("--user", required=True, help="CUC admin username")
+    parser.add_argument("--resolve-extensions", action="store_true",
+                        help="Fetch users/contacts to resolve phone transfer extensions to names (slower)")
 
     subparsers = parser.add_subparsers(dest="command")
 
     # generate (default)
     sub_gen = subparsers.add_parser("generate", help="Generate HTML report and graph (default)")
-    sub_gen.add_argument("--resolve-extensions", action="store_true",
-                         help="Fetch users/contacts to resolve phone transfer extensions to names (slower)")
 
     # query — raw API path
     sub_query = subparsers.add_parser("query", help="Query a raw CUPI API path and dump JSON")
