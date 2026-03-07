@@ -1221,10 +1221,30 @@ def _format_minutes(mins):
     return f"{h12}:{mm:02d} {ampm}"
 
 
-DAYS_OF_WEEK = {
-    "0": "Sun", "1": "Mon", "2": "Tue", "3": "Wed",
-    "4": "Thu", "5": "Fri", "6": "Sat",
-}
+_DAY_FLAGS = [
+    ("IsActiveMonday", "Mon"), ("IsActiveTuesday", "Tue"), ("IsActiveWednesday", "Wed"),
+    ("IsActiveThursday", "Thu"), ("IsActiveFriday", "Fri"),
+    ("IsActiveSaturday", "Sat"), ("IsActiveSunday", "Sun"),
+]
+
+
+def _active_days(detail):
+    """Return a compact day string from ScheduleDetail boolean flags."""
+    days = [abbr for flag, abbr in _DAY_FLAGS
+            if str(detail.get(flag, "false")).lower() == "true"]
+    if not days:
+        return ""
+    if len(days) == 7:
+        return "Every day"
+    if days == ["Mon", "Tue", "Wed", "Thu", "Fri"]:
+        return "Mon \u2013 Fri"
+    if len(days) > 2:
+        # Check for contiguous range
+        all_abbrs = [abbr for _, abbr in _DAY_FLAGS]
+        indices = [all_abbrs.index(d) for d in days]
+        if indices == list(range(indices[0], indices[0] + len(indices))):
+            return f"{days[0]} \u2013 {days[-1]}"
+    return ", ".join(days)
 
 
 def generate_table_html(nodes, edges, holiday_schedules, schedules):
@@ -1243,8 +1263,7 @@ def generate_table_html(nodes, edges, holiday_schedules, schedules):
             "name": s.get("DisplayName", ""),
             "id": s.get("ObjectId", ""),
             "details": [{
-                "startDay": DAYS_OF_WEEK.get(str(d.get("StartDayOfWeek", "")), str(d.get("StartDayOfWeek", ""))),
-                "endDay": DAYS_OF_WEEK.get(str(d.get("EndDayOfWeek", "")), str(d.get("EndDayOfWeek", ""))),
+                "days": _active_days(d),
                 "startTime": _format_minutes(d.get("StartTime", "")),
                 "endTime": _format_minutes(d.get("EndTime", "")),
                 "active": str(d.get("IsActive", "true")).lower() == "true",
@@ -1360,7 +1379,7 @@ tr:hover {{ background: #16213e; }}
 <div class="section-header"><h2 id="schedules">Schedules (Business Hours)</h2><button class="copy-btn" onclick="copyTableAsMd('scheduleTable', this)">Copy as Markdown</button></div>
 <table id="scheduleTable">
 <thead>
-<tr><th>Schedule</th><th>Day(s)</th><th>Start Time</th><th>End Time</th><th>Active</th></tr>
+<tr><th>Schedule</th><th>Days</th><th>Start Time</th><th>End Time</th><th>Active</th></tr>
 </thead>
 <tbody></tbody>
 </table>
@@ -1609,9 +1628,8 @@ function renderCallFlowTrees(activeEdges) {{
             return;
         }}
         s.details.forEach(d => {{
-            const days = d.startDay === d.endDay ? d.startDay : d.startDay + " &ndash; " + d.endDay;
             const tr = document.createElement("tr");
-            tr.innerHTML = '<td>' + esc(s.name) + '</td><td>' + days + '</td><td>' + esc(d.startTime) + '</td><td>' + esc(d.endTime) + '</td><td>' + (d.active ? "Yes" : '<span class="muted">No</span>') + '</td>';
+            tr.innerHTML = '<td>' + esc(s.name) + '</td><td>' + esc(d.days) + '</td><td>' + esc(d.startTime) + '</td><td>' + esc(d.endTime) + '</td><td>' + (d.active ? "Yes" : '<span class="muted">No</span>') + '</td>';
             tbody.appendChild(tr);
         }});
     }});
@@ -2253,13 +2271,14 @@ def cmd_schedules(args):
     print(f"{'='*60}")
     for s in schedules:
         print(f"\n  {s.get('DisplayName', 'Unknown')} ({s.get('ObjectId', '')})")
-        for d in s.get("_details", []):
-            start_day = DAYS_OF_WEEK.get(str(d.get("StartDayOfWeek", "")), "?")
-            end_day = DAYS_OF_WEEK.get(str(d.get("EndDayOfWeek", "")), "?")
+        details = s.get("_details", [])
+        if not details:
+            print("    All day, every day")
+        for d in details:
+            days = _active_days(d) or "?"
             start_time = _format_minutes(d.get("StartTime", ""))
             end_time = _format_minutes(d.get("EndTime", ""))
-            active = d.get("IsActive", True)
-            days = start_day if start_day == end_day else f"{start_day}-{end_day}"
+            active = str(d.get("IsActive", "true")).lower() == "true"
             print(f"    {days}: {start_time} - {end_time} {'(active)' if active else '(inactive)'}")
 
     print(f"\n{'='*60}")
