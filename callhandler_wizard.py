@@ -2685,7 +2685,7 @@ tr:hover {{ background: #16213e; }}
 
 <div class="note">
 <strong>Holiday Testing:</strong> Create a temporary holiday schedule entry for today's date in Cisco Unity Connection
-to test the Holiday greeting path. Remove it after testing. Holidays override all other schedules, so this is the
+to test the Holiday greeting path. Holidays override all other schedules, so this is the
 only way to verify that Holiday greetings and routing work correctly without waiting for an actual holiday.
 </div>
 
@@ -2734,19 +2734,46 @@ const DAY_LABELS = {{ Mon: "Monday", Tue: "Tuesday", Wed: "Wednesday", Thu: "Thu
         return;
     }}
 
+    // Build a fingerprint per day so we can group days with identical schedules
+    const dayFingerprints = {{}};
     DAYS.forEach(day => {{
-        const section = document.createElement("div");
-        const windows = dayWindows[day].sort((a, b) => a.start - b.start);
+        const sorted = dayWindows[day].slice().sort((a, b) => a.start - b.start || a.end - b.end || a.schedule.localeCompare(b.schedule));
+        dayFingerprints[day] = JSON.stringify(sorted.map(w => [w.start, w.end, w.schedule]));
+    }});
 
-        let heading = '<div class="section-header"><h2>' + DAY_LABELS[day] + '</h2>';
-        heading += '<button class="copy-btn" data-day="' + day + '">Copy as Markdown</button></div>';
+    // Group consecutive days with the same fingerprint (preserve day order)
+    const groups = [];
+    DAYS.forEach(day => {{
+        const fp = dayFingerprints[day];
+        const last = groups.length ? groups[groups.length - 1] : null;
+        if (last && last.fp === fp) {{
+            last.days.push(day);
+        }} else {{
+            groups.push({{ fp, days: [day], windows: dayWindows[day].slice().sort((a, b) => a.start - b.start) }});
+        }}
+    }});
+
+    function groupLabel(days) {{
+        if (days.length === 7) return "Every Day";
+        if (days.length === 1) return DAY_LABELS[days[0]];
+        return DAY_LABELS[days[0]] + " – " + DAY_LABELS[days[days.length - 1]];
+    }}
+
+    groups.forEach(group => {{
+        const section = document.createElement("div");
+        const windows = group.windows;
+        const gid = group.days.join("-");
+        const label = groupLabel(group.days);
+
+        let heading = '<div class="section-header"><h2>' + label + '</h2>';
+        heading += '<button class="copy-btn" data-day="' + gid + '">Copy as Markdown</button></div>';
         section.innerHTML = heading;
-        section.querySelector(".copy-btn").addEventListener("click", function() {{ copyDayTable(this.dataset.day, this); }});
+        section.querySelector(".copy-btn").addEventListener("click", function() {{ copyDayTable(this.dataset.day, this, label); }});
 
         if (!windows.length) {{
             section.innerHTML += '<p class="no-transitions">No business hours scheduled — Off Hours all day.</p>';
             const tbl = document.createElement("table");
-            tbl.id = "table-" + day;
+            tbl.id = "table-" + gid;
             tbl.innerHTML = '<thead><tr><th>Test Time</th><th>Expected State</th><th>Reason</th></tr></thead>' +
                 '<tbody><tr><td>Any time</td><td class="state-offhours">Off Hours</td><td class="reason">No schedule active this day</td></tr></tbody>';
             section.appendChild(tbl);
@@ -2754,8 +2781,7 @@ const DAY_LABELS = {{ Mon: "Monday", Tue: "Tuesday", Wed: "Wednesday", Thu: "Thu
             return;
         }}
 
-        // Merge overlapping windows and sort
-        // Flatten overlapping windows into non-overlapping segments
+        // Merge overlapping windows into non-overlapping segments
         const merged = [];
         let cur = null;
         windows.forEach(w => {{
@@ -2773,37 +2799,33 @@ const DAY_LABELS = {{ Mon: "Monday", Tue: "Tuesday", Wed: "Wednesday", Thu: "Thu
         // Compute test times — one sample per distinct state period
         const tests = [];
 
-        // Off hours before first window
+        // Off hours before first window — 5 min after midnight
         if (merged[0].start > 0) {{
-            const t = Math.floor(merged[0].start / 2);
-            tests.push({{ time: t, state: "offhours", reason: "Off hours — before business hours" }});
+            tests.push({{ time: 5, state: "offhours", reason: "Off hours — before business hours" }});
         }}
 
         merged.forEach((w, i) => {{
             const schedNote = w.schedules.length > 0 && data.schedules.length > 1
                 ? " (" + w.schedules.join(", ") + ")" : "";
 
-            // During this business hours window
-            const mid = Math.floor((w.start + w.end) / 2);
-            tests.push({{ time: mid, state: "standard", reason: "During business hours" + schedNote }});
+            // During this business hours window — 5 min after open
+            tests.push({{ time: w.start + 5, state: "standard", reason: "During business hours" + schedNote }});
 
-            // Gap between this window and next (split shift off hours)
+            // Gap between this window and next — 5 min after close
             if (i < merged.length - 1) {{
-                const gapMid = Math.floor((w.end + merged[i + 1].start) / 2);
-                tests.push({{ time: gapMid, state: "offhours", reason: "Off hours — gap between shifts" }});
+                tests.push({{ time: w.end + 5, state: "offhours", reason: "Off hours — gap between shifts" }});
             }}
         }});
 
-        // Off hours after last window
+        // Off hours after last window — 5 min after close
         const lastEnd = merged[merged.length - 1].end;
         if (lastEnd < 1440) {{
-            const t = Math.floor((lastEnd + 1440) / 2);
-            tests.push({{ time: t, state: "offhours", reason: "Off hours — after business hours" }});
+            tests.push({{ time: lastEnd + 5, state: "offhours", reason: "Off hours — after business hours" }});
         }} else {{
             tests.push({{ time: 720, state: "standard", reason: "24-hour schedule — always Standard" }});
         }}
 
-        // Deduplicate by time, keeping earliest entry per time
+        // Deduplicate by time
         const seen = new Set();
         const unique = [];
         tests.sort((a, b) => a.time - b.time);
@@ -2815,7 +2837,7 @@ const DAY_LABELS = {{ Mon: "Monday", Tue: "Tuesday", Wed: "Wednesday", Thu: "Thu
         }});
 
         const tbl = document.createElement("table");
-        tbl.id = "table-" + day;
+        tbl.id = "table-" + gid;
         tbl.innerHTML = '<thead><tr><th>Test Time</th><th>Expected State</th><th>Reason</th></tr></thead>';
         const tbody = document.createElement("tbody");
         unique.forEach(t => {{
@@ -2838,7 +2860,7 @@ const DAY_LABELS = {{ Mon: "Monday", Tue: "Tuesday", Wed: "Wednesday", Thu: "Thu
         '<tr><td>During business hours</td><td class="state-holiday">Holiday</td><td class="reason">Holiday overrides Standard — should hear Holiday greeting</td></tr>' +
         '<tr><td>Outside business hours</td><td class="state-holiday">Holiday</td><td class="reason">Holiday overrides Off Hours — should hear Holiday greeting, not Off Hours</td></tr>' +
         '</tbody></table>' +
-        '<p style="color:#888; font-size:12px; margin-top:8px;">Create a temporary holiday for today in Unity Connection to test these. Remove after testing.</p>';
+        '<p style="color:#888; font-size:12px; margin-top:8px;">Create a temporary holiday for today in Unity Connection to test these.</p>';
     container.appendChild(holidaySection);
 }})();
 
@@ -2848,12 +2870,13 @@ function flashBtn(btn, msg) {{
     setTimeout(() => btn.textContent = orig, 1500);
 }}
 
-function copyDayTable(day, btn) {{
+function copyDayTable(day, btn, label) {{
     const table = document.getElementById("table-" + day);
     if (!table) return;
     const headerCells = Array.from(table.querySelectorAll("thead th"));
     const headers = headerCells.map(th => th.textContent);
-    const lines = [DAY_LABELS[day], headers.join(" | "), headers.map(() => "---").join(" | ")];
+    const title = label || DAY_LABELS[day] || day;
+    const lines = [title, headers.join(" | "), headers.map(() => "---").join(" | ")];
     table.querySelectorAll("tbody tr").forEach(tr => {{
         const cells = Array.from(tr.querySelectorAll("td")).map(td => td.textContent.trim());
         lines.push(cells.join(" | "));
