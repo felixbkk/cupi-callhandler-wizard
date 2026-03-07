@@ -303,7 +303,8 @@ def fetch_schedules(session, host):
     before = len(all_schedules)
     all_schedules = [s for s in all_schedules
                      if not s.get("OwnerSubscriberObjectId")
-                     and s.get("DisplayName", "") not in _SKIP_NAMES]
+                     and s.get("DisplayName", "") not in _SKIP_NAMES
+                     and str(s.get("IsHoliday", "false")).lower() != "true"]
     skipped = before - len(all_schedules)
     if skipped:
         print(f"  Filtered out {skipped} user/system schedules ({before} -> {len(all_schedules)})")
