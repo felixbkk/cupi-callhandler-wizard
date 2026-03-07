@@ -285,14 +285,17 @@ def fetch_schedules(session, host):
             break
         page += 1
 
-    # Filter out per-user schedules (Sync Schedule, etc.) — they have an
-    # OwnerSubscriberObjectId set, meaning they belong to a subscriber.
+    # Filter out per-user schedules (Sync Schedule, voice recognition, etc.)
+    # Primary: OwnerSubscriberObjectId set means subscriber-owned
+    # Fallback: known system-generated schedule names
+    _SKIP_NAMES = {"Sync Schedule", "Voice Recognition Update Schedule"}
     before = len(all_schedules)
     all_schedules = [s for s in all_schedules
-                     if not s.get("OwnerSubscriberObjectId")]
+                     if not s.get("OwnerSubscriberObjectId")
+                     and s.get("DisplayName", "") not in _SKIP_NAMES]
     skipped = before - len(all_schedules)
     if skipped:
-        print(f"  Filtered out {skipped} user schedules ({before} -> {len(all_schedules)})")
+        print(f"  Filtered out {skipped} user/system schedules ({before} -> {len(all_schedules)})")
 
     # Fetch time blocks for each remaining schedule
     total_sched = len(all_schedules)
