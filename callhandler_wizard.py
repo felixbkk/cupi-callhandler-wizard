@@ -560,7 +560,8 @@ def _detect_wav_codec(filepath):
 
 
 def _download_one_audio(session, remote_url, local_path, max_retries=2):
-    """Download a single audio file with retry. Returns (success, file_size)."""
+    """Download a single audio file with retry. Returns (success, file_size, fail_reason)."""
+    last_reason = ""
     for attempt in range(max_retries + 1):
         try:
             resp = session.get(remote_url, verify=False, timeout=API_TIMEOUT, stream=True)
@@ -568,20 +569,28 @@ def _download_one_audio(session, remote_url, local_path, max_retries=2):
                 with open(local_path, "wb") as f:
                     for chunk in resp.iter_content(8192):
                         f.write(chunk)
-                return True, os.path.getsize(local_path)
+                return True, os.path.getsize(local_path), ""
             elif resp.status_code in (500, 502, 503) and attempt < max_retries:
+                last_reason = f"HTTP {resp.status_code}"
                 time.sleep(1)
                 continue
             else:
-                return False, 0
-        except (requests.exceptions.Timeout, requests.exceptions.ConnectionError):
+                return False, 0, f"HTTP {resp.status_code}"
+        except requests.exceptions.Timeout:
+            last_reason = "Request timeout"
             if attempt < max_retries:
                 time.sleep(1)
                 continue
-            return False, 0
-        except Exception:
-            return False, 0
-    return False, 0
+            return False, 0, last_reason
+        except requests.exceptions.ConnectionError:
+            last_reason = "Connection error"
+            if attempt < max_retries:
+                time.sleep(1)
+                continue
+            return False, 0, last_reason
+        except Exception as e:
+            return False, 0, str(e) or "Unknown error"
+    return False, 0, last_reason or "Max retries exceeded"
 
 
 def download_audio_files(session, nodes, site_dir):
@@ -612,15 +621,17 @@ def download_audio_files(session, nodes, site_dir):
     counts = {"downloaded": 0, "failed": 0}
     codec_counts = {}
 
+    failures = []
+
     def _do_download(item):
         a, remote_url, local_path, filename = item
-        success, file_size = _download_one_audio(session, remote_url, local_path)
-        return a, local_path, filename, success, file_size
+        success, file_size, fail_reason = _download_one_audio(session, remote_url, local_path)
+        return a, local_path, filename, success, file_size, fail_reason
 
     with ThreadPoolExecutor(max_workers=4) as pool:
         futures = [pool.submit(_do_download, item) for item in download_list]
         for future in as_completed(futures):
-            a, local_path, filename, success, file_size = future.result()
+            a, local_path, filename, success, file_size, fail_reason = future.result()
             if success and file_size > 100:
                 a["url"] = f"audio/{filename}"
                 fmt_tag, codec_name = _detect_wav_codec(local_path)
@@ -638,7 +649,9 @@ def download_audio_files(session, nodes, site_dir):
                 counts["downloaded"] += 1
             else:
                 a["noAudio"] = True
+                a["failReason"] = fail_reason
                 counts["failed"] += 1
+                failures.append(filename.rsplit(" - ", 1)[0] + " — " + a.get("greeting", "?") + f" ({fail_reason})")
             done = counts["downloaded"] + counts["failed"]
             fail_msg = f"({counts['failed']} failed)" if counts["failed"] else "downloaded"
             print(f"  Audio: {done}/{total} {fail_msg}", end="\r")
@@ -649,6 +662,9 @@ def download_audio_files(session, nodes, site_dir):
     print(f"{result}{' ' * 20}")
     if codec_counts:
         print(f"  Codecs: {', '.join(f'{name} ({count})' for name, count in sorted(codec_counts.items()))}")
+    if failures:
+        for f_msg in failures:
+            print(f"    FAILED: {f_msg}")
 
 
 _HANDLER_TYPE_MAP = {"3": "callhandler", "5": "interview", "6": "directory"}
@@ -3908,6 +3924,7 @@ def generate_audit_html(nodes, edges, holiday_audit, site_name="", host=""):
     codec_warnings = []
     system_default_audio = []
     no_audio_items = []
+    audio_download_failures = []
     for n in nodes:
         for a in n.get("audio", []):
             if a.get("codecWarning"):
@@ -3929,6 +3946,13 @@ def generate_audit_html(nodes, edges, holiday_audit, site_name="", host=""):
                     "handler": n.get("name", ""),
                     "id": n["id"],
                 })
+            if a.get("failReason"):
+                audio_download_failures.append({
+                    "handler": n.get("name", ""),
+                    "id": n["id"],
+                    "greeting": a.get("greeting", ""),
+                    "reason": a.get("failReason", "Unknown"),
+                })
 
     orphans = [{"name": n["name"], "id": n["id"]} for n in nodes if n.get("classification") == "orphan"]
     unreachable = [{"name": n["name"], "id": n["id"]} for n in nodes if n.get("classification") == "unreachable"]
@@ -3942,6 +3966,7 @@ def generate_audit_html(nodes, edges, holiday_audit, site_name="", host=""):
         "codecWarnings": codec_warnings,
         "systemDefaultAudio": system_default_audio,
         "noAudioItems": no_audio_items,
+        "audioDownloadFailures": audio_download_failures,
         "orphans": orphans,
         "unreachable": unreachable,
         "deadEnds": dead_ends,
@@ -4038,7 +4063,7 @@ const totalWarnings = data.handlerWarnings.reduce((s, h) => s + h.warnings.lengt
 const holidayCritical = data.holidayAudit.filter(f => f.level === "critical").length;
 const holidayWarnings = data.holidayAudit.filter(f => f.level === "warning").length;
 const classificationCount = data.orphans.length + data.unreachable.length + data.deadEnds.length;
-const audioIssues = data.codecWarnings.length + data.noAudioItems.length;
+const audioIssues = data.codecWarnings.length + data.noAudioItems.length + data.audioDownloadFailures.length;
 const sysDefaultCount = data.systemDefaultAudio.length;
 
 const totalIssues = totalWarnings + holidayCritical + holidayWarnings + classificationCount + audioIssues;
@@ -4129,6 +4154,9 @@ document.getElementById("badge-sysdefault").innerHTML = badge(sysDefaultCount, "
         return;
     }}
     let html = '<table><thead><tr><th>Handler</th><th>Greeting</th><th>Issue</th></tr></thead><tbody>';
+    data.audioDownloadFailures.forEach(f => {{
+        html += '<tr><td>' + handlerLink(f.handler, f.id) + '</td><td>' + esc(f.greeting) + '</td><td class="level-critical">Download failed — ' + esc(f.reason) + '</td></tr>';
+    }});
     data.noAudioItems.forEach(n => {{
         html += '<tr><td>' + handlerLink(n.handler, n.id) + '</td><td>Standard</td><td class="level-warning">No audio file — callers will hear silence or system default</td></tr>';
     }});
@@ -4584,6 +4612,17 @@ def cmd_generate(args):
                 tag = "CRITICAL" if finding["level"] == "critical" else "WARNING" if finding["level"] == "warning" else "OK"
                 audit_lines.append(f"  [{tag}] {finding['message']}")
 
+        # Audio download failures
+        audio_failures = []
+        for n in nodes:
+            for a in n.get("audio", []):
+                if a.get("failReason"):
+                    audio_failures.append(f"  [FAILED] {n.get('name', '?')} — {a.get('greeting', '?')}: {a.get('failReason', '?')}")
+        if audio_failures:
+            audit_lines.append(f"\nAUDIO DOWNLOAD FAILURES ({len(audio_failures)})")
+            audit_lines.append("-" * 40)
+            audit_lines.extend(audio_failures)
+
         # Codec warnings
         codec_warnings = []
         for n in nodes:
@@ -4610,7 +4649,7 @@ def cmd_generate(args):
                 audit_lines.append(f"  [WARNING] {len(dead_ends)} dead end(s): {', '.join(n['name'] for n in dead_ends)}")
 
         # Summary
-        total_warnings = sum(len(w) for _, w in warned_nodes) + len(codec_warnings)
+        total_warnings = sum(len(w) for _, w in warned_nodes) + len(codec_warnings) + len(audio_failures)
         total_critical = sum(1 for f in holiday_audit if f["level"] == "critical") if holiday_audit else 0
         has_findings = total_warnings > 0 or total_critical > 0 or orphans or unreachable or dead_ends
 
