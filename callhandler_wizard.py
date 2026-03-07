@@ -285,12 +285,21 @@ def fetch_schedules(session, host):
             break
         page += 1
 
-    # Fetch time blocks for each schedule
+    # Filter out per-user schedules (Sync Schedule, etc.) — they have an
+    # OwnerSubscriberObjectId set, meaning they belong to a subscriber.
+    before = len(all_schedules)
+    all_schedules = [s for s in all_schedules
+                     if not s.get("OwnerSubscriberObjectId")]
+    skipped = before - len(all_schedules)
+    if skipped:
+        print(f"  Filtered out {skipped} user schedules ({before} -> {len(all_schedules)})")
+
+    # Fetch time blocks for each remaining schedule
     total_sched = len(all_schedules)
     for i, sched in enumerate(all_schedules):
         sched_id = sched.get("ObjectId", "")
         sched_name = sched.get("DisplayName", "Unknown")
-        if (i + 1) % 25 == 0 or i == 0 or i == total_sched - 1:
+        if (i + 1) % 5 == 0 or i == 0 or i == total_sched - 1:
             print(f"  Fetching schedule details {i + 1}/{total_sched}: {sched_name}")
         try:
             data = api_get(session, host, f"/vmrest/schedules/{sched_id}/scheduledetails")
