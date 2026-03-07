@@ -2707,7 +2707,7 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans
 .type-pill.routingrule {{ color: #2ecc71; }}
 .type-pill.directory {{ color: #f39c12; }}
 .type-pill.interview {{ color: #9b59b6; }}
-.audio-row {{ display: flex; align-items: center; gap: 8px; padding: 8px 16px; background: #12192e; border-bottom: 1px solid #0a1628; }}
+.audio-row {{ display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 8px 16px; background: #12192e; border-bottom: 1px solid #0a1628; }}
 .audio-badge {{ color: #1abc9c; font-size: 12px; text-decoration: none; }}
 .audio-badge:hover {{ text-decoration: underline; }}
 .cond-row {{ padding: 8px 16px; font-size: 12px; color: #888; background: #12192e; border-bottom: 1px solid #0a1628; }}
@@ -2931,7 +2931,7 @@ function createCard(node, isEntry) {{
                 audioContent += ' <span style="color:#666; font-size:11px;">No audio file</span>';
             }} else {{
                 audioContent += (a.codecWarning ? ' <span style="color:#e67e22; font-size:10px;" title="' + esc(a.codec) + ' — may not play in browser">&#9888; ' + esc(a.codec) + '</span>' : '') +
-                    '<br><audio controls preload="none" onloadedmetadata="this.playbackRate=2.0" style="width:100%; max-width:200px; height:32px; margin-top:2px; color-scheme:dark;"><source src="' + esc(a.url) + '" type="audio/wav"></audio>';
+                    '<audio controls preload="none" onloadedmetadata="this.playbackRate=2.0" style="width:260px; height:32px; margin-left:auto; flex-shrink:0; color-scheme:dark;"><source src="' + esc(a.url) + '" type="audio/wav"></audio>';
             }}
             row.innerHTML = audioContent;
             card.appendChild(row);
@@ -3399,6 +3399,17 @@ tr:hover {{ background: #16213e; }}
 .sched-tag.offhours {{ background: #5b3a1e; color: #f39c12; }}
 .sched-tag.holiday {{ background: #4a1a2e; color: #e74c3c; }}
 .sched-tag.standard {{ background: #1a3a2e; color: #2ecc71; }}
+.cheat-group {{ background: #16213e; border: 1px solid #0f3460; border-radius: 8px; padding: 16px 20px; margin-bottom: 16px; }}
+.cheat-group-hdr {{ display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; }}
+.cheat-group-name {{ font-size: 16px; font-weight: 700; color: #e94560; }}
+.cheat-group-ext {{ font-size: 13px; color: #888; }}
+.cheat-step {{ font-size: 14px; line-height: 2; padding: 2px 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }}
+.cheat-step .step-num {{ display: inline-block; width: 18px; color: #555; font-size: 12px; }}
+.cheat-step .action {{ color: #e0e0e0; }}
+.cheat-step .key {{ display: inline-block; background: #0f3460; border: 1px solid #1a4a7a; border-radius: 4px; padding: 0 7px; font-weight: 700; color: #1abc9c; font-family: monospace; font-size: 14px; min-width: 24px; text-align: center; }}
+.cheat-step .target {{ color: #888; font-size: 12px; }}
+.cheat-sched {{ margin-top: 2px; }}
+.cheat-divider {{ border: none; border-top: 1px solid #0f3460; margin: 6px 0; }}
 .sched-tag.alternate {{ background: #2a1a4e; color: #9b59b6; }}
 .sched-tag.always {{ background: #1a2a3e; color: #3498db; }}
 </style>
@@ -3594,8 +3605,9 @@ const DAY_LABELS = {{ Mon: "Monday", Tue: "Tuesday", Wed: "Wednesday", Thu: "Thu
     const schedLabels = {{ standard: "Standard", offhours: "Off Hours", holiday: "Holiday", alternate: "Alternate", always: "All" }};
 
     // Build per-schedule dial paths via BFS
+    // Each path: {{ steps: [{{ action, key, handlerName }}], schedule, entryRuleName, entryExt }}
     const schedules = ["standard", "offhours", "holiday"];
-    // Map: handlerId -> {{ name, extension, paths: [{{ keys: "1 > 3 > 2", schedule: "standard", entry: "Rule Name" }}] }}
+    // allPaths: handlerId -> {{ name, ext, routes: [{{ steps, schedule, entryName, entryExt }}] }}
     const allPaths = {{}};
 
     schedules.forEach(sched => {{
@@ -3605,26 +3617,26 @@ const DAY_LABELS = {{ Mon: "Monday", Tue: "Tuesday", Wed: "Wednesday", Thu: "Thu
             (adj[e.source] = adj[e.source] || []).push(e);
         }});
 
-        // Find routing rules with outgoing edges
         const roots = data.nodes.filter(n => n.type === "routingrule" && (adj[n.id] || []).length > 0);
 
         roots.forEach(root => {{
+            // Find the extension from the rule name (pattern: "5501-Name-Ext-10000" -> "5501")
+            const ruleExt = (root.name.match(/^(\\d+)/) || ["", ""])[1];
             const entries = adj[root.id] || [];
             entries.forEach(ruleEdge => {{
-                const entryName = root.name;
-                // BFS from the rule target
-                const queue = [{{ nodeId: ruleEdge.target, keys: [] }}];
+                const entryNode = nodeMap[ruleEdge.target];
+                if (!entryNode || entryNode.type !== "callhandler") return;
+
+                // Record the entry point itself (call this number, you land here)
+                if (!allPaths[ruleEdge.target]) allPaths[ruleEdge.target] = {{ name: entryNode.name, ext: entryNode.extension || "", routes: [] }};
+                allPaths[ruleEdge.target].routes.push({{ steps: [], schedule: sched, entryName: root.name, entryExt: ruleExt }});
+
+                // BFS from entry
+                const queue = [{{ nodeId: ruleEdge.target, steps: [] }}];
                 const visited = new Set([root.id, ruleEdge.target]);
 
-                // Record the direct target
-                const targetNode = nodeMap[ruleEdge.target];
-                if (targetNode && targetNode.type === "callhandler") {{
-                    if (!allPaths[ruleEdge.target]) allPaths[ruleEdge.target] = {{ name: targetNode.name, extension: targetNode.extension || "", paths: [] }};
-                    allPaths[ruleEdge.target].paths.push({{ keys: "(entry)", schedule: sched, entry: entryName }});
-                }}
-
                 while (queue.length) {{
-                    const {{ nodeId, keys }} = queue.shift();
+                    const {{ nodeId, steps }} = queue.shift();
                     const edges = adj[nodeId] || [];
                     edges.forEach(edge => {{
                         if (visited.has(edge.target)) return;
@@ -3632,29 +3644,29 @@ const DAY_LABELS = {{ Mon: "Monday", Tue: "Tuesday", Wed: "Wednesday", Thu: "Thu
                         const tgt = nodeMap[edge.target];
                         if (!tgt) return;
 
-                        // Extract the key press from the edge label
-                        let keyLabel = "";
+                        // Build a human-readable step
+                        let step = {{}};
                         const m = edge.label.match(/^Key\\s+(\\S+)/);
                         if (m) {{
-                            keyLabel = m[1];
+                            step = {{ action: "press", key: m[1], handlerName: tgt.name }};
                         }} else if (edge.label.startsWith("After:")) {{
-                            keyLabel = "(wait)";
+                            step = {{ action: "wait", key: "", handlerName: tgt.name }};
                         }} else if (edge.label.startsWith("Xfer:")) {{
-                            keyLabel = "(xfer)";
+                            step = {{ action: "transfer", key: "", handlerName: tgt.name }};
                         }} else {{
-                            keyLabel = "(" + edge.label.split(":")[0].toLowerCase() + ")";
+                            const lbl = edge.label.replace(/^[^:]+:/, "").trim() || edge.label;
+                            step = {{ action: lbl.toLowerCase(), key: "", handlerName: tgt.name }};
                         }}
 
-                        const newKeys = [...keys, keyLabel];
+                        const newSteps = [...steps, step];
 
                         if (tgt.type === "callhandler" || tgt.type === "interview" || tgt.type === "directory") {{
-                            if (!allPaths[edge.target]) allPaths[edge.target] = {{ name: tgt.name, extension: tgt.extension || "", paths: [] }};
-                            allPaths[edge.target].paths.push({{ keys: newKeys.join(" > "), schedule: sched, entry: entryName }});
+                            if (!allPaths[edge.target]) allPaths[edge.target] = {{ name: tgt.name, ext: tgt.extension || "", routes: [] }};
+                            allPaths[edge.target].routes.push({{ steps: newSteps, schedule: sched, entryName: root.name, entryExt: ruleExt }});
                         }}
 
-                        // Continue BFS for call handlers (they have sub-menus)
                         if (tgt.type === "callhandler") {{
-                            queue.push({{ nodeId: edge.target, keys: newKeys }});
+                            queue.push({{ nodeId: edge.target, steps: newSteps }});
                         }}
                     }});
                 }}
@@ -3662,70 +3674,142 @@ const DAY_LABELS = {{ Mon: "Monday", Tue: "Tuesday", Wed: "Wednesday", Thu: "Thu
         }});
     }});
 
-    // Deduplicate paths — same handler+keys+entry across multiple schedules -> merge schedules
+    // Deduplicate: same steps+entry across schedules -> merge
     Object.values(allPaths).forEach(hp => {{
         const merged = [];
-        hp.paths.forEach(p => {{
-            const existing = merged.find(m => m.keys === p.keys && m.entry === p.entry);
+        hp.routes.forEach(r => {{
+            const sig = JSON.stringify(r.steps) + "|" + r.entryName;
+            const existing = merged.find(m => m.sig === sig);
             if (existing) {{
-                if (!existing.schedules.includes(p.schedule)) existing.schedules.push(p.schedule);
+                if (!existing.schedules.includes(r.schedule)) existing.schedules.push(r.schedule);
             }} else {{
-                merged.push({{ keys: p.keys, entry: p.entry, schedules: [p.schedule] }});
+                merged.push({{ steps: r.steps, entryName: r.entryName, entryExt: r.entryExt, schedules: [r.schedule], sig }});
             }}
         }});
-        hp.paths = merged;
+        hp.routes = merged;
     }});
 
-    // Sort handlers: by entry point, then by dial path depth
-    const sortedHandlers = Object.values(allPaths).sort((a, b) => {{
-        const aFirst = a.paths[0] || {{ keys: "", entry: "" }};
-        const bFirst = b.paths[0] || {{ keys: "", entry: "" }};
-        return aFirst.entry.localeCompare(bFirst.entry) ||
-            (aFirst.keys.split(">").length) - (bFirst.keys.split(">").length) ||
-            a.name.localeCompare(b.name);
+    // Group by entry point, then list each destination under it
+    const byEntry = {{}};
+    Object.entries(allPaths).forEach(([id, hp]) => {{
+        hp.routes.forEach(route => {{
+            const key = route.entryName;
+            if (!byEntry[key]) byEntry[key] = {{ entryName: route.entryName, entryExt: route.entryExt, destinations: [] }};
+            byEntry[key].destinations.push({{
+                name: hp.name, ext: hp.ext, steps: route.steps, schedules: route.schedules
+            }});
+        }});
     }});
 
-    if (!sortedHandlers.length) return;
+    // Sort destinations within each entry by depth then name
+    Object.values(byEntry).forEach(ep => {{
+        ep.destinations.sort((a, b) => a.steps.length - b.steps.length || a.name.localeCompare(b.name));
+    }});
+
+    const sortedEntries = Object.values(byEntry).sort((a, b) => a.entryName.localeCompare(b.entryName));
+
+    if (!sortedEntries.length) return;
 
     const section = document.createElement("div");
     let heading = '<div class="section-header"><h2>Dial Path Cheat Sheet</h2>';
-    heading += '<button class="copy-btn" id="copyDialPaths">Copy as Markdown</button></div>';
-    heading += '<p style="color:#888; font-size:12px; margin-bottom:12px;">Every reachable handler and the exact key sequence to reach it from each entry point.</p>';
+    heading += '<button class="copy-btn" id="copyDialPaths">Copy as Text</button></div>';
+    heading += '<p style="color:#888; font-size:13px; margin-bottom:16px;">Step-by-step dialing instructions to reach every handler from each entry point.</p>';
     section.innerHTML = heading;
 
-    const tbl = document.createElement("table");
-    tbl.id = "table-dialpath";
-    tbl.innerHTML = '<thead><tr><th>Handler</th><th>Extension</th><th>Dial Path</th><th>Entry Point</th><th>Schedule</th></tr></thead>';
-    const tbody = document.createElement("tbody");
+    sortedEntries.forEach(ep => {{
+        const group = document.createElement("div");
+        group.className = "cheat-group";
 
-    sortedHandlers.forEach(hp => {{
-        hp.paths.forEach((p, i) => {{
-            const tr = document.createElement("tr");
-            const schedTags = p.schedules.length === 3
+        const callNum = ep.entryExt || ep.entryName;
+        let hdr = '<div class="cheat-group-hdr"><span class="cheat-group-name">Call ' + esc(callNum) + '</span>';
+        hdr += '<span class="cheat-group-ext">' + esc(ep.entryName) + '</span></div>';
+        group.innerHTML = hdr;
+
+        ep.destinations.forEach((dest, di) => {{
+            if (di > 0) {{
+                const hr = document.createElement("hr");
+                hr.className = "cheat-divider";
+                group.appendChild(hr);
+            }}
+
+            const block = document.createElement("div");
+            block.style.cssText = "padding: 2px 0;";
+
+            const schedTags = dest.schedules.length === 3
                 ? '<span class="sched-tag always">All</span>'
-                : p.schedules.map(s => '<span class="sched-tag ' + s + '">' + (schedLabels[s] || s) + '</span>').join(" ");
-            tr.innerHTML =
-                '<td>' + (i === 0 ? esc(hp.name) : '') + '</td>' +
-                '<td>' + (i === 0 ? esc(hp.extension) : '') + '</td>' +
-                '<td class="dial-path">' + esc(p.keys) + '</td>' +
-                '<td class="dial-entry">' + esc(p.entry) + '</td>' +
-                '<td>' + schedTags + '</td>';
-            tbody.appendChild(tr);
+                : dest.schedules.map(s => '<span class="sched-tag ' + s + '">' + (schedLabels[s] || s) + '</span>').join(" ");
+
+            let html = '<div style="font-weight:700; color:#1abc9c; margin-bottom:2px;">' + esc(dest.name);
+            if (dest.ext) html += ' <span style="color:#888; font-weight:400;">x' + esc(dest.ext) + '</span>';
+            html += ' ' + schedTags + '</div>';
+
+            if (dest.steps.length === 0) {{
+                html += '<div class="cheat-step"><span class="step-num">1.</span> <span class="action">Call <span class="key">' + esc(callNum) + '</span></span> <span class="target">\u2192 you are here</span></div>';
+            }} else {{
+                let stepNum = 1;
+                html += '<div class="cheat-step"><span class="step-num">' + stepNum + '.</span> <span class="action">Call <span class="key">' + esc(callNum) + '</span></span></div>';
+                stepNum++;
+                dest.steps.forEach(s => {{
+                    let stepHtml = '<div class="cheat-step"><span class="step-num">' + stepNum + '.</span> ';
+                    if (s.action === "press") {{
+                        stepHtml += '<span class="action">Press <span class="key">' + esc(s.key) + '</span></span>';
+                    }} else if (s.action === "wait") {{
+                        stepHtml += '<span class="action">Wait for greeting to finish</span>';
+                    }} else if (s.action === "transfer") {{
+                        stepHtml += '<span class="action">Transferred automatically</span>';
+                    }} else {{
+                        stepHtml += '<span class="action">' + esc(s.action) + '</span>';
+                    }}
+                    stepHtml += ' <span class="target">\u2192 ' + esc(s.handlerName) + '</span>';
+                    stepHtml += '</div>';
+                    html += stepHtml;
+                    stepNum++;
+                }});
+            }}
+
+            block.innerHTML = html;
+            group.appendChild(block);
         }});
+
+        section.appendChild(group);
     }});
 
-    tbl.appendChild(tbody);
-    section.appendChild(tbl);
     container.appendChild(section);
 
+    // Copy as plain text instructions
     document.getElementById("copyDialPaths").addEventListener("click", function() {{
-        const headers = ["Handler", "Extension", "Dial Path", "Entry Point", "Schedule"];
-        const lines = ["Dial Path Cheat Sheet", headers.join(" | "), headers.map(() => "---").join(" | ")];
-        sortedHandlers.forEach(hp => {{
-            hp.paths.forEach(p => {{
-                const schedText = p.schedules.length === 3 ? "All" : p.schedules.map(s => schedLabels[s] || s).join(", ");
-                lines.push([hp.name, hp.extension, p.keys, p.entry, schedText].join(" | "));
+        const lines = ["DIAL PATH CHEAT SHEET", ""];
+        sortedEntries.forEach(ep => {{
+            const callNum = ep.entryExt || ep.entryName;
+            const label = "Call " + callNum + " (" + ep.entryName + ")";
+            lines.push(label);
+            lines.push("=".repeat(label.length));
+            ep.destinations.forEach((dest, di) => {{
+                if (di > 0) lines.push("");
+                const schedText = dest.schedules.length === 3 ? "All schedules" : dest.schedules.map(s => schedLabels[s] || s).join(", ");
+                const destLabel = dest.ext ? dest.name + " (x" + dest.ext + ")" : dest.name;
+                lines.push(destLabel + " [" + schedText + "]");
+                if (dest.steps.length === 0) {{
+                    lines.push("  1. Call " + callNum + " -> you are here");
+                }} else {{
+                    let stepNum = 1;
+                    lines.push("  " + stepNum + ". Call " + callNum);
+                    stepNum++;
+                    dest.steps.forEach(s => {{
+                        if (s.action === "press") {{
+                            lines.push("  " + stepNum + ". Press " + s.key);
+                        }} else if (s.action === "wait") {{
+                            lines.push("  " + stepNum + ". Wait for greeting to finish");
+                        }} else if (s.action === "transfer") {{
+                            lines.push("  " + stepNum + ". Transferred automatically");
+                        }} else {{
+                            lines.push("  " + stepNum + ". " + s.action);
+                        }}
+                        stepNum++;
+                    }});
+                }}
             }});
+            lines.push("");
         }});
         navigator.clipboard.writeText(lines.join("\\n")).then(() => flashBtn(this));
     }});
