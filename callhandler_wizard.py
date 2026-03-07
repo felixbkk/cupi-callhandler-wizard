@@ -1658,9 +1658,9 @@ function renderTable() {{
             ? inLinks.map(e => esc((nodeMap[e.source] || {{}}).name || "?") + " &rarr; " + esc(e.label)).join("<br>")
             : '<span class="muted">None</span>';
 
-        const audioList = (n.audio || []).filter(audioMatchesSchedule);
+        const audioList = n.audio || [];
         const audioHtml = audioList.length
-            ? audioList.map(a => '<a href="' + esc(a.url) + '" target="_blank" class="audio-link">' + esc(a.greeting) + '</a>').join("<br>")
+            ? audioList.map(a => '<a href="' + esc(a.url) + '" target="_blank" class="audio-link">' + esc(a.greeting) + '</a>' + schedTag(a.schedule)).join("<br>")
             : '<span class="muted">&mdash;</span>';
 
         // Schedule name for handlers, conditions for routing rules
@@ -1748,10 +1748,9 @@ function renderCallFlowTrees(activeEdges) {{
 
         function audioLinks(node, indent) {{
             if (!node || !node.audio) return [];
-            const audios = node.audio.filter(audioMatchesSchedule);
-            if (!audios.length) return [];
+            if (!node.audio.length) return [];
             const prefix = "  ".repeat(indent);
-            return audios.map(a => prefix + '<a href="' + esc(a.url) + '" target="_blank" class="audio-link">&#9835; ' + esc(a.greeting) + ' greeting</a>' + schedTag(a.schedule));
+            return node.audio.map(a => prefix + '<a href="' + esc(a.url) + '" target="_blank" class="audio-link">&#9835; ' + esc(a.greeting) + ' greeting</a>' + schedTag(a.schedule));
         }}
 
         let lines = [];
@@ -2256,8 +2255,7 @@ function createCard(node, isEntry) {{
 
     // Audio
     if (node.audio && node.audio.length) {{
-        const audios = node.audio.filter(a => activeSchedule === "all" || a.schedule === "always" || a.schedule === activeSchedule);
-        audios.forEach(a => {{
+        node.audio.forEach(a => {{
             const row = document.createElement("div");
             row.className = "audio-row";
             const gUrl = greetingUrl(node.id, a.greeting);
