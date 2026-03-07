@@ -111,6 +111,29 @@ def friendly_site_name(site_id):
     return name.replace('-', ' ').replace('_', ' ').strip().title() or site_id
 
 
+def lookup_city_flag(site_name):
+    """Look up a flag emoji for a site name from the bundled cities database."""
+    cities_paths = [
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "resources", "cities.json"),
+        os.path.join("resources", "cities.json"),
+    ]
+    for p in cities_paths:
+        if os.path.isfile(p):
+            try:
+                with open(p, "r", encoding="utf-8") as f:
+                    cities = json.load(f)
+                # Try exact match, then each word in the site name
+                key = site_name.lower().strip()
+                if key in cities:
+                    return cities[key]["flag"]
+                for word in key.split():
+                    if word in cities:
+                        return cities[word]["flag"]
+            except (json.JSONDecodeError, KeyError, OSError):
+                pass
+    return ""
+
+
 def sanitize_dirname(name):
     """Make a string safe for use as a directory name."""
     return re.sub(r'[^\w\-.]', '_', name).strip('_')
@@ -4115,8 +4138,9 @@ document.getElementById("badge-sysdefault").innerHTML = badge(sysDefaultCount, "
 </html>'''
 
 
-def generate_index_html(site_name="", run_utc=None, host=""):
+def generate_index_html(site_name="", run_utc=None, host="", site_flag=""):
     title_prefix = f"{site_name} — " if site_name else ""
+    flag_html = f'<span style="font-size:32px; vertical-align:middle; margin-right:8px;">{site_flag}</span>' if site_flag else ""
     if run_utc is None:
         from datetime import timezone
         run_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
@@ -4142,7 +4166,7 @@ h1 {{ color: #e94560; font-size: 24px; margin-bottom: 8px; }}
 </head>
 <body>
 <div class="index">
-<h1>{title_prefix}Call Handler Reports</h1>
+<h1>{flag_html}{title_prefix}Call Handler Reports</h1>
 <p class="subtitle">Generated {run_utc}</p>
 <a href="callflow.html" class="card">
 <h2>Call Flow Explorer</h2>
@@ -4476,7 +4500,8 @@ def cmd_generate(args):
         with open(audit_html_path, "w", encoding="utf-8") as f:
             f.write(audit_html)
 
-        idx_html = generate_index_html(site_name=site_name, run_utc=run_utc, host=host)
+        site_flag = lookup_city_flag(site_name)
+        idx_html = generate_index_html(site_name=site_name, run_utc=run_utc, host=host, site_flag=site_flag)
         with open(index_path, "w", encoding="utf-8") as f:
             f.write(idx_html)
 
