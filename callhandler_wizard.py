@@ -3763,6 +3763,9 @@ h1 {{ margin-bottom: 4px; }}
 h2 {{ margin: 28px 0 10px 0; font-size: 18px; padding-bottom: 6px; }}
 th {{ padding: 8px 12px; }}
 td {{ padding: 7px 12px; }}
+table {{ table-layout: fixed; width: 100%; max-width: 700px; }}
+th:nth-child(1), td:nth-child(1) {{ width: 120px; }}
+th:nth-child(2), td:nth-child(2) {{ width: 140px; }}
 .copy-btn {{ margin-left: 12px; }}
 .state-standard {{ color: #2ecc71; font-weight: 600; }}
 .state-offhours {{ color: #f39c12; font-weight: 600; }}
