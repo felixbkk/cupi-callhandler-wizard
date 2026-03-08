@@ -4673,6 +4673,8 @@ def connect(args):
 
 class TeeLogger:
     """Write to both stdout and a log file."""
+    encoding = "utf-8"
+
     def __init__(self, log_path):
         self.terminal = sys.stdout
         self.log = open(log_path, "w", encoding="utf-8")
@@ -4684,6 +4686,12 @@ class TeeLogger:
     def flush(self):
         self.terminal.flush()
         self.log.flush()
+
+    def isatty(self):
+        return self.terminal.isatty()
+
+    def fileno(self):
+        return self.terminal.fileno()
 
     def close(self):
         if not self.log.closed:
