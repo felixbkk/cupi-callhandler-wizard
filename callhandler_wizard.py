@@ -4698,19 +4698,45 @@ kbd {{ display: inline-block; background: #0f3460; border: 1px solid #1a4a7a; bo
 code {{ background: #0f3460; padding: 2px 6px; border-radius: 3px; font-size: 13px; color: #1abc9c; }}
 .back-to-top {{ position: fixed; bottom: 20px; right: 20px; background: #16213e; border: 1px solid #0f3460; color: #e0e0e0; padding: 8px 14px; border-radius: 6px; text-decoration: none; font-size: 14px; z-index: 9998; }}
 .back-to-top:hover {{ background: #0f3460; }}
+.toc {{ background: #16213e; border: 1px solid #0f3460; border-radius: 8px; padding: 16px 24px 16px 20px; margin-bottom: 24px; display: inline-block; }}
+.toc strong {{ display: block; margin-bottom: 8px; color: #e94560; font-size: 14px; }}
+.toc ol {{ margin: 0 0 0 18px; padding: 0; font-size: 14px; line-height: 2; }}
+.toc a {{ color: #1abc9c; text-decoration: none; }}
+.toc a:hover {{ text-decoration: underline; }}
+.audit-table {{ width: 100%; border-collapse: collapse; margin: 10px 0 18px 0; font-size: 13px; }}
+.audit-table th {{ text-align: left; padding: 6px 10px; border-bottom: 2px solid #0f3460; color: #888; font-weight: 600; }}
+.audit-table td {{ padding: 5px 10px; border-bottom: 1px solid #0f3460; }}
+.sev-critical {{ color: #e74c3c; font-weight: 700; }}
+.sev-warning {{ color: #e67e22; font-weight: 700; }}
+.sev-info {{ color: #2ecc71; }}
+.sev-ok {{ color: #888; }}
 </style>
 </head>
 <body>
 <h1>Report Guide</h1>
 <p class="subtitle">How to use the Call Handler Wizard reports to understand and test your auto-attendant call flows.</p>
 
-<div class="section">
+<nav class="toc">
+<strong>Contents</strong>
+<ol>
+<li><a href="#getting-started">Getting Started</a></li>
+<li><a href="#pages">Pages Overview</a></li>
+<li><a href="#node-colors">Node Colors</a></li>
+<li><a href="#edge-colors">Edge Colors</a></li>
+<li><a href="#audit-reference">Audit Reference</a></li>
+<li><a href="#audio">Audio Playback</a></li>
+<li><a href="#audio-upload">Uploading Greeting Audio</a></li>
+<li><a href="#tips">Tips</a></li>
+</ol>
+</nav>
+
+<div class="section" id="getting-started">
 <h2>Getting Started</h2>
 <p>These reports are a read-only snapshot of your Cisco Unity Connection auto-attendant configuration. Use them to understand how callers navigate your phone system, identify problems, and plan testing.</p>
 <p>Use the navigation bar in the top-right corner to move between pages. Click the sun/moon icon to toggle between dark and light mode &mdash; your preference is saved automatically.</p>
 </div>
 
-<div class="section">
+<div class="section" id="pages">
 <h2>Pages Overview</h2>
 
 <h3>Home</h3>
@@ -4732,6 +4758,7 @@ code {{ background: #0f3460; padding: 2px 6px; border-radius: 3px; font-size: 13
 <ul>
 <li>Each card shows the handler name, extension, greeting audio, and available key presses</li>
 <li>Click a key to drill down to the next handler</li>
+<li>When a specific schedule is selected, handlers that transfer immediately (no greeting audio) collapse to show just the handler name</li>
 <li>Warnings (misconfiguration issues) are shown directly on each card</li>
 <li>Use the breadcrumb trail at the top to jump back to earlier steps</li>
 </ul>
@@ -4757,10 +4784,10 @@ code {{ background: #0f3460; padding: 2px 6px; border-radius: 3px; font-size: 13
 <div class="tip"><strong>Tip:</strong> To test holiday routing, create a temporary holiday in CUC for today's date, test, then remove it.</div>
 
 <h3>Audit</h3>
-<p>Automated findings organized by severity. Highlights misconfigurations, missing audio, schedule gaps, and other issues that may affect callers.</p>
+<p>Automated findings organized by category. Use the "Copy as Markdown" button to export all findings for documentation or ticketing.</p>
 </div>
 
-<div class="section">
+<div class="section" id="node-colors">
 <h2>Node Colors</h2>
 <p>Handlers are color-coded by their reachability in the call flow:</p>
 <div class="legend">
@@ -4774,7 +4801,7 @@ code {{ background: #0f3460; padding: 2px 6px; border-radius: 3px; font-size: 13
 </div>
 </div>
 
-<div class="section">
+<div class="section" id="edge-colors">
 <h2>Edge Colors (Connection Lines)</h2>
 <p>Lines between handlers are colored by when they are active:</p>
 <div class="legend">
@@ -4786,22 +4813,89 @@ code {{ background: #0f3460; padding: 2px 6px; border-radius: 3px; font-size: 13
 </div>
 </div>
 
-<div class="section">
-<h2>Common Warnings</h2>
-<p>The audit system flags potential issues with your auto-attendant setup:</p>
-<ul>
-<li><strong>No timeout key (*)</strong> &mdash; Callers who don't press anything have no path forward and will hear silence</li>
-<li><strong>After-greeting = Hangup</strong> &mdash; The system disconnects the caller after the greeting plays</li>
-<li><strong>After-greeting = Take Message</strong> &mdash; Callers hear a voicemail prompt on what should be an auto-attendant</li>
-<li><strong>Supervised transfer</strong> &mdash; Should typically be Release for auto-attendant handlers</li>
-<li><strong>Alternate greeting/transfer enabled</strong> &mdash; An override is active that changes normal routing</li>
-<li><strong>Caller input disabled</strong> &mdash; Key presses are ignored during the greeting</li>
-<li><strong>Schedule gap</strong> &mdash; A handler is reachable during one schedule but not another</li>
-<li><strong>Self-loop / Circular routing</strong> &mdash; Callers get stuck in a loop</li>
-</ul>
+<div class="section" id="audit-reference">
+<h2>Audit Reference</h2>
+<p>The audit page checks for the following issues, grouped by category:</p>
+
+<h3>Misconfiguration Warnings</h3>
+<table class="audit-table">
+<thead><tr><th>Warning</th><th>Severity</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td>No timeout key (*)</td><td class="sev-warning">Warning</td><td>Callers who don't press anything have no path forward</td></tr>
+<tr><td>After-greeting = Hangup</td><td class="sev-warning">Warning</td><td>System disconnects the caller after the greeting plays</td></tr>
+<tr><td>After-greeting = Take Message</td><td class="sev-warning">Warning</td><td>Voicemail prompt plays on an auto-attendant handler</td></tr>
+<tr><td>After-message = Hangup</td><td class="sev-warning">Warning</td><td>Caller disconnected after leaving a message</td></tr>
+<tr><td>Menu key = Take Message</td><td class="sev-warning">Warning</td><td>A menu key sends the caller to voicemail</td></tr>
+<tr><td>Supervised transfer</td><td class="sev-warning">Warning</td><td>Should typically be Release for auto-attendant handlers</td></tr>
+<tr><td>Alternate transfer enabled</td><td class="sev-warning">Warning</td><td>Overrides Standard and Off Hours transfer rules</td></tr>
+<tr><td>Alternate greeting enabled</td><td class="sev-warning">Warning</td><td>Overrides the Standard greeting</td></tr>
+<tr><td>Caller input disabled</td><td class="sev-warning">Warning</td><td>DTMF key presses ignored during greeting playback</td></tr>
+<tr><td>Record your message prompt</td><td class="sev-warning">Warning</td><td>"Record at the tone" prompt enabled on an AA handler</td></tr>
+<tr><td>Key routes to itself</td><td class="sev-warning">Warning</td><td>Menu entry loops back to the same handler</td></tr>
+<tr><td>Circular routing</td><td class="sev-warning">Warning</td><td>Two handlers route to each other with no exit</td></tr>
+<tr><td>Schedule gap</td><td class="sev-warning">Warning</td><td>Reachable during one schedule but not another</td></tr>
+</tbody>
+</table>
+
+<h3>Holiday Calendar</h3>
+<table class="audit-table">
+<thead><tr><th>Finding</th><th>Severity</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td>No holidays configured</td><td class="sev-critical">Critical</td><td>Holiday schedule exists but has no holidays defined</td></tr>
+<tr><td>All holidays expired</td><td class="sev-critical">Critical</td><td>Every holiday in the schedule is in the past</td></tr>
+<tr><td>Holidays expiring soon</td><td class="sev-warning">Warning</td><td>Last holiday ends within 90 days</td></tr>
+<tr><td>Holidays up to date</td><td class="sev-ok">OK</td><td>Holidays extend beyond 90 days</td></tr>
+</tbody>
+</table>
+
+<h3>Classification Concerns</h3>
+<table class="audit-table">
+<thead><tr><th>Classification</th><th>Severity</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td>True Orphan</td><td class="sev-warning">Warning</td><td>No connections at all &mdash; completely isolated handler</td></tr>
+<tr><td>Unreachable Subtree</td><td class="sev-warning">Warning</td><td>Has outgoing edges but nothing routes to it</td></tr>
+<tr><td>Dead End</td><td class="sev-warning">Warning</td><td>Has incoming edges but callers have nowhere to go</td></tr>
+</tbody>
+</table>
+
+<h3>Audio Issues</h3>
+<table class="audit-table">
+<thead><tr><th>Issue</th><th>Severity</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td>Download failed</td><td class="sev-critical">Critical</td><td>Greeting audio could not be retrieved from the server</td></tr>
+<tr><td>No audio file (reachable)</td><td class="sev-critical">Critical</td><td>Reachable handler with no Standard greeting audio &mdash; callers hear silence</td></tr>
+<tr><td>No audio file (unreachable)</td><td class="sev-warning">Warning</td><td>Unreachable handler with no audio &mdash; lower priority</td></tr>
+<tr><td>Codec not playable</td><td class="sev-warning">Warning</td><td>Audio format (e.g. G.729) won't play in a web browser</td></tr>
+</tbody>
+</table>
+
+<h3>Extension Dialing</h3>
+<table class="audit-table">
+<thead><tr><th>Issue</th><th>Severity</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td>Extension dialing enabled</td><td class="sev-warning">Warning</td><td>Reachable handler allows callers to dial extensions directly &mdash; verify restriction tables block external/international dialing</td></tr>
+</tbody>
+</table>
+
+<h3>Menu Depth</h3>
+<table class="audit-table">
+<thead><tr><th>Depth</th><th>Severity</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td>5&ndash;6 steps deep</td><td class="sev-warning">Warning</td><td>Handler is 5+ routing steps from the nearest entry point &mdash; consider flattening</td></tr>
+<tr><td>7+ steps deep</td><td class="sev-critical">Critical</td><td>Callers are very unlikely to navigate this deep</td></tr>
+</tbody>
+</table>
+
+<h3>System Default Greetings</h3>
+<table class="audit-table">
+<thead><tr><th>Issue</th><th>Severity</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td>System default recording</td><td class="sev-info">Info</td><td>Greeting uses the built-in CUC prompt instead of a custom recording</td></tr>
+</tbody>
+</table>
 </div>
 
-<div class="section">
+<div class="section" id="audio">
 <h2>Audio Playback</h2>
 <p>Greeting recordings are downloaded and embedded directly in the reports. Look for the audio player controls on the Call Flow, Flow Trees, and Handlers pages.</p>
 <ul>
@@ -4811,7 +4905,7 @@ code {{ background: #0f3460; padding: 2px 6px; border-radius: 3px; font-size: 13
 </ul>
 </div>
 
-<div class="section">
+<div class="section" id="audio-upload">
 <h2>Uploading Greeting Audio</h2>
 <p>When recording or uploading custom greetings to CUC, the audio file must be in WAV format. CUC accepts the following codecs:</p>
 <ul>
@@ -4825,7 +4919,7 @@ code {{ background: #0f3460; padding: 2px 6px; border-radius: 3px; font-size: 13
 <div class="warn"><strong>Rejected formats:</strong> MP3, M4A, WMA, stereo files, and sample rates other than 8000 Hz will be rejected by CUC.</div>
 </div>
 
-<div class="section">
+<div class="section" id="tips">
 <h2>Tips</h2>
 <ul>
 <li>Reports are fully self-contained &mdash; no internet connection needed to view them</li>
