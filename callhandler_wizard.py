@@ -3200,6 +3200,21 @@ function createCard(node, isEntry) {{
     card.className = "flow-card" + (isEntry ? " entry-point" : " handler") + (node.primary ? " primary" : "");
     card.id = "card-" + node.id;
 
+    // Check if this handler auto-transfers during the active schedule
+    // (collapses the card to just name + transfer note)
+    let autoTransfer = false;
+    if (activeSchedule !== "all" && node.type !== "routingrule") {{
+        const schedEdges = data.edges.filter(e => e.source === node.id && (e.schedule === "always" || e.schedule === activeSchedule));
+        const autoEdge = schedEdges.find(e => (e.label.startsWith("After:") || e.label.startsWith("Xfer:")) && e.schedule === activeSchedule);
+        if (autoEdge && nodeMap[autoEdge.target]) {{
+            const schedGreetings = {{ standard: "Standard", offhours: "Off Hours", holiday: "Holiday" }};
+            const greetName = schedGreetings[activeSchedule] || "";
+            const greetAudio = (node.audio || []).find(a => a.greeting === greetName && a.enabled !== false);
+            const hasAudio = greetAudio && !greetAudio.noAudio && !greetAudio.systemDefault;
+            if (!hasAudio) autoTransfer = true;
+        }}
+    }}
+
     // Header
     const header = document.createElement("div");
     header.className = "card-header";
@@ -3225,6 +3240,15 @@ function createCard(node, isEntry) {{
     if (aUrl) badges.innerHTML += '<a href="' + esc(aUrl) + '" target="_blank" style="color:#1abc9c; font-size:11px; text-decoration:none; margin-left:4px;" title="View on ' + esc(data.siteName || 'Unity') + ' Unity">&#9741;</a>';
     header.appendChild(badges);
     card.appendChild(header);
+
+    // Collapsed card: auto-transfer with no greeting audio → show minimal card
+    if (autoTransfer) {{
+        const note = document.createElement("div");
+        note.style.cssText = "padding: 8px 16px; color: #888; font-size: 12px; font-style: italic;";
+        note.textContent = "Transfers immediately — no caller input.";
+        card.appendChild(note);
+        return card;
+    }}
 
     // Routing rule type callout
     if (node.type === "routingrule" && node.ruleType && node.ruleType !== "Both") {{
