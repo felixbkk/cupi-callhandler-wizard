@@ -33,8 +33,16 @@ requests.packages.urllib3.disable_warnings(
 HEADERS = {"Accept": "application/json"}
 ROWS_PER_PAGE = 512
 
-
 API_TIMEOUT = 30  # seconds per request
+
+
+def _json_for_script(obj):
+    """Serialize to JSON safe for embedding in <script> tags.
+
+    Escapes '</' sequences to prevent breaking out of the script block.
+    """
+    return json.dumps(obj).replace("</", r"<\/")
+
 
 
 def api_get(session, host, path, params=None):
@@ -631,7 +639,12 @@ def download_audio_files(session, nodes, site_dir):
     with ThreadPoolExecutor(max_workers=4) as pool:
         futures = [pool.submit(_do_download, item) for item in download_list]
         for future in as_completed(futures):
-            a, local_path, filename, success, file_size, fail_reason = future.result()
+            try:
+                a, local_path, filename, success, file_size, fail_reason = future.result()
+            except Exception as e:
+                counts["failed"] += 1
+                print(f"  Warning: audio download thread failed: {e}")
+                continue
             if success and file_size > 100:
                 a["url"] = f"audio/{filename}"
                 fmt_tag, codec_name = _detect_wav_codec(local_path)
@@ -764,6 +777,7 @@ def _add_route_edge(nodes, edges, source_id, action, target_id, conversation,
 
 def build_graph(call_handlers, interview_handlers, routing_rules, session, host,
                 schedule_set_map=None, directory_handlers=None, extension_map=None):
+    _disabled_endpoints.clear()
     nodes = {}
     edges = []
     ext_map = extension_map or {}
@@ -946,7 +960,11 @@ def build_graph(call_handlers, interview_handlers, routing_rules, session, host,
             done_count += 1
             if done_count % 10 == 0 or done_count == 1 or done_count == total:
                 print(f"  Handler details: {done_count}/{total}")
-            handler_results.append(future.result())
+            try:
+                handler_results.append(future.result())
+            except Exception as e:
+                ch = futures[future]
+                print(f"  Warning: failed to fetch details for '{ch.get('DisplayName', '?')}': {e}")
 
     # Process results (single-threaded, modifies shared nodes/edges)
     for oid, name, ch, menu_entries, transfer_rules, greetings, t_m, t_x, t_g in handler_results:
@@ -1744,7 +1762,7 @@ def _write_audit_log(site_dir, findings, warned_nodes, holiday_audit, site_name)
 
 
 def generate_html(nodes, edges, d3_local=False, site_name="", host=""):
-    graph_data = json.dumps({"nodes": nodes, "links": edges, "host": host, "siteName": site_name})
+    graph_data = _json_for_script({"nodes": nodes, "links": edges, "host": host, "siteName": site_name})
     d3_tag = f'<script src="{D3_FILENAME}"></script>' if d3_local else f'<script src="{D3_CDN_URL}"></script>'
     title_prefix = f"{site_name} — " if site_name else ""
     return f'''<!DOCTYPE html>
@@ -2380,7 +2398,7 @@ def _active_days(detail):
 
 def generate_table_html(nodes, edges, holiday_schedules, schedules, site_name="", host=""):
     title_prefix = f"{site_name} — " if site_name else ""
-    report_data = json.dumps({
+    report_data = _json_for_script({
         "nodes": nodes,
         "edges": edges,
         "host": host,
@@ -2777,7 +2795,7 @@ function copyDebugOutput() {{
 
 def generate_flow_trees_html(nodes, edges, site_name="", host=""):
     title_prefix = f"{site_name} — " if site_name else ""
-    report_data = json.dumps({"nodes": nodes, "edges": edges, "host": host, "siteName": site_name})
+    report_data = _json_for_script({"nodes": nodes, "edges": edges, "host": host, "siteName": site_name})
     return f'''<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -2936,7 +2954,7 @@ function copyFlowTrees(btn) {{
 
 def generate_callflow_html(nodes, edges, site_name="", host=""):
     title_prefix = f"{site_name} — " if site_name else ""
-    report_data = json.dumps({"nodes": nodes, "edges": edges, "host": host, "siteName": site_name})
+    report_data = _json_for_script({"nodes": nodes, "edges": edges, "host": host, "siteName": site_name})
     return f'''<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -3455,7 +3473,7 @@ if (!loadFromHash()) {{
 
 def generate_schedules_html(holiday_schedules, schedules, site_name="", host="", holiday_audit=None):
     title_prefix = f"{site_name} — " if site_name else ""
-    report_data = json.dumps({
+    report_data = _json_for_script({
         "host": host,
         "siteName": site_name,
         "holidays": [{
@@ -3612,7 +3630,7 @@ def generate_test_times_html(schedules, site_name="", host="", nodes=None, edges
             details.append({"start": start_min, "end": end_min, "days": day_flags})
         if details:
             raw_schedules.append({"name": s.get("DisplayName", ""), "details": details})
-    report_data = json.dumps({
+    report_data = _json_for_script({
         "schedules": raw_schedules,
         "siteName": site_name,
         "nodes": nodes or [],
@@ -4081,7 +4099,7 @@ function copyDayTable(day, btn, label) {{
 def generate_audit_html(nodes, edges, holiday_audit, site_name="", host=""):
     title_prefix = f"{site_name} — " if site_name else ""
     findings = collect_audit_findings(nodes, holiday_audit)
-    report_data = json.dumps({"host": host, "siteName": site_name, **findings})
+    report_data = _json_for_script({"host": host, "siteName": site_name, **findings})
 
     return f'''<!DOCTYPE html>
 <html lang="en">
@@ -4668,7 +4686,8 @@ class TeeLogger:
         self.log.flush()
 
     def close(self):
-        self.log.close()
+        if not self.log.closed:
+            self.log.close()
         sys.stdout = self.terminal
 
 
