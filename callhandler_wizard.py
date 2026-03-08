@@ -1664,11 +1664,16 @@ def collect_audit_findings(nodes, holiday_audit):
                     "reachable": reachable,
                 })
             if a.get("failReason"):
+                # Skip expected 404s on disabled or system default greetings —
+                # no uploaded audio to download is normal for these.
+                reason = a.get("failReason", "Unknown")
+                if reason == "HTTP 404" and (not a.get("enabled", True) or a.get("systemDefault")):
+                    continue
                 audio_download_failures.append({
                     "handler": n.get("name", ""),
                     "id": n["id"],
                     "greeting": a.get("greeting", ""),
-                    "reason": a.get("failReason", "Unknown"),
+                    "reason": reason,
                 })
 
     orphans = [{"name": n["name"], "id": n["id"]} for n in nodes if n.get("classification") == "orphan"]
@@ -4256,6 +4261,7 @@ a.summary-card:hover {{ border-color: #1abc9c; }}
 <body>
 <h1>{title_prefix}Audit Results</h1>
 <p class="subtitle">All findings from the call handler analysis, categorized by type.</p>
+<button id="copyAuditMd" style="margin-bottom:16px; padding:6px 16px; background:#16213e; border:1px solid #0f3460; color:#e0e0e0; border-radius:6px; cursor:pointer; font-size:13px;">Copy as Markdown</button>
 
 <div class="summary-bar" id="summaryBar"></div>
 
@@ -4468,6 +4474,135 @@ document.getElementById("badge-sysdefault").innerHTML = badge(sysDefaultCount, "
     html += '</tbody></table>';
     el.innerHTML = html;
 }})();
+
+{_JS_FLASH_BTN}
+
+document.getElementById("copyAuditMd").addEventListener("click", function() {{
+    const lines = [];
+    const site = data.siteName ? data.siteName + " — " : "";
+    lines.push("# " + site + "Audit Results");
+    lines.push("");
+
+    // Warnings
+    lines.push("## Misconfiguration Warnings (" + totalWarnings + ")");
+    lines.push("");
+    if (data.handlerWarnings.length) {{
+        lines.push("| Handler | Extension | Warning |");
+        lines.push("| --- | --- | --- |");
+        data.handlerWarnings.forEach(h => {{
+            h.warnings.forEach(w => {{
+                lines.push("| " + h.name + " | " + (h.extension || "") + " | " + w + " |");
+            }});
+        }});
+    }} else {{
+        lines.push("No misconfigurations detected.");
+    }}
+    lines.push("");
+
+    // Holidays
+    const holidayTotal = holidayCritical + holidayWarnings;
+    lines.push("## Holiday Calendar (" + holidayTotal + ")");
+    lines.push("");
+    if (data.holidayAudit.length) {{
+        lines.push("| Level | Finding |");
+        lines.push("| --- | --- |");
+        data.holidayAudit.forEach(f => {{
+            const tag = f.level === "critical" ? "CRITICAL" : f.level === "warning" ? "WARNING" : "OK";
+            lines.push("| " + tag + " | " + f.message + " |");
+        }});
+    }} else {{
+        lines.push("No holiday audit findings.");
+    }}
+    lines.push("");
+
+    // Classification
+    lines.push("## Classification Concerns (" + classificationCount + ")");
+    lines.push("");
+    if (classificationCount) {{
+        lines.push("| Handler | Classification |");
+        lines.push("| --- | --- |");
+        data.orphans.forEach(n => {{
+            lines.push("| " + n.name + " | True Orphan — no connections at all |");
+        }});
+        data.unreachable.forEach(n => {{
+            lines.push("| " + n.name + " | Unreachable Subtree — has outgoing edges but nothing routes to it |");
+        }});
+        data.deadEnds.forEach(n => {{
+            lines.push("| " + n.name + " | Dead End — has incoming edges but callers have nowhere to go |");
+        }});
+    }} else {{
+        lines.push("All handlers are reachable and connected.");
+    }}
+    lines.push("");
+
+    // Audio
+    lines.push("## Audio Issues (" + audioIssues + ")");
+    lines.push("");
+    if (audioIssues) {{
+        lines.push("| Handler | Greeting | Issue |");
+        lines.push("| --- | --- | --- |");
+        data.audioDownloadFailures.forEach(f => {{
+            lines.push("| " + f.handler + " | " + f.greeting + " | Download failed — " + f.reason + " |");
+        }});
+        data.noAudioItems.forEach(n => {{
+            const tag = n.reachable ? "Reachable handler — " : "";
+            lines.push("| " + n.handler + " | Standard | " + tag + "No audio file |");
+        }});
+        data.codecWarnings.forEach(c => {{
+            lines.push("| " + c.handler + " | " + c.greeting + " | " + c.codec + " — not playable in browser |");
+        }});
+    }} else {{
+        lines.push("No audio issues detected.");
+    }}
+    lines.push("");
+
+    // Extension dialing
+    lines.push("## Extension Dialing (" + extDialCount + ")");
+    lines.push("");
+    if (data.extDialingItems.length) {{
+        lines.push("| Handler | Unlocked Keys |");
+        lines.push("| --- | --- |");
+        data.extDialingItems.forEach(e => {{
+            lines.push("| " + e.handler + " | " + e.keys.join(", ") + " |");
+        }});
+    }} else {{
+        lines.push("No reachable handlers have extension dialing enabled.");
+    }}
+    lines.push("");
+
+    // Depth
+    lines.push("## Menu Depth (" + deepCount + ")");
+    lines.push("");
+    if (data.deepHandlers.length) {{
+        lines.push("Max depth: " + data.maxDepth + " steps.");
+        lines.push("");
+        lines.push("| Handler | Depth |");
+        lines.push("| --- | --- |");
+        data.deepHandlers.forEach(h => {{
+            lines.push("| " + h.handler + " | " + h.depth + " steps |");
+        }});
+    }} else {{
+        lines.push("No handlers deeper than 4 steps (max depth: " + data.maxDepth + ").");
+    }}
+    lines.push("");
+
+    // System default
+    lines.push("## System Default Greetings (" + sysDefaultCount + ")");
+    lines.push("");
+    if (data.systemDefaultAudio.length) {{
+        lines.push("| Handler | Greeting | Status |");
+        lines.push("| --- | --- | --- |");
+        data.systemDefaultAudio.forEach(a => {{
+            const status = a.enabled ? "Enabled — system default" : "Disabled — system default";
+            lines.push("| " + a.handler + " | " + a.greeting + " | " + status + " |");
+        }});
+    }} else {{
+        lines.push("All greetings use personal recordings.");
+    }}
+    lines.push("");
+
+    navigator.clipboard.writeText(lines.join("\\n")).then(() => flashBtn(this));
+}});
 </script>
 <a href="#" class="back-to-top">&uarr; Top</a>
 {floating_nav_html("audit.html")}
