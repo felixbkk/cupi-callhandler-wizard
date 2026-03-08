@@ -2949,7 +2949,7 @@ function renderTrees() {{
         const condStr = conds.length
             ? ' <span class="flow-muted">[' + conds.map(c => esc(c.param) + " " + esc(c.op) + " " + esc(c.value)).join(", ") + ']</span>'
             : "";
-        lines.push('<span class="flow-root">' + esc(root.name) + '</span>' + condStr + ' -> <span class="flow-handler">' + esc(targetNode.name) + (targetNode.extension ? " (" + esc(targetNode.extension) + ")" : "") + '</span>' + (targetNode.scheduleName ? ' <span class="flow-muted">[' + esc(targetNode.scheduleName) + ']</span>' : ""));
+        lines.push('<span class="flow-root">' + esc(root.name) + '</span>' + condStr + ' -> <span class="flow-handler">' + esc(targetNode.name) + (targetNode.extension && !targetNode.name.includes(targetNode.extension) ? " (" + esc(targetNode.extension) + ")" : "") + '</span>' + (targetNode.scheduleName ? ' <span class="flow-muted">[' + esc(targetNode.scheduleName) + ']</span>' : ""));
         lines.push(...audioLinks(targetNode, 1));
 
         const visited = new Set([root.id]);
@@ -2958,7 +2958,7 @@ function renderTrees() {{
             adj[nodeId].forEach(edge => {{
                 const tgt = nodeMap[edge.target];
                 const name = tgt ? tgt.name : "?";
-                const ext = tgt && tgt.extension ? " (" + esc(tgt.extension) + ")" : "";
+                const ext = tgt && tgt.extension && !tgt.name.includes(tgt.extension) ? " (" + esc(tgt.extension) + ")" : "";
                 const prefix = "  ".repeat(indent);
                 if (visited.has(edge.target)) {{
                     lines.push(prefix + '<span class="flow-label">[' + esc(edge.label) + ']</span> -> <span class="flow-visited">' + esc(name) + ext + ' (see above)</span>' + schedTag(edge.schedule));
@@ -3293,7 +3293,7 @@ function createCard(node, isEntry) {{
                 '<span class="menu-arrow">&rarr;</span>' +
                 '<span class="menu-target' + (isAction ? " action" : "") + (isSelf ? " self-ref" : "") + '">' +
                 esc(targetName) + (isSelf ? " (loops back)" : "") +
-                (targetNode && targetNode.extension ? ' <span style="color:#888">(' + esc(targetNode.extension) + ')</span>' : '') +
+                (targetNode && targetNode.extension && !targetName.includes(targetNode.extension) ? ' <span style="color:#888">(' + esc(targetNode.extension) + ')</span>' : '') +
                 '</span>' +
                 schedTag(edge.schedule);
 
