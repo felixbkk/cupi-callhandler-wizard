@@ -2581,7 +2581,8 @@ function renderTable() {{
 
     sorted.forEach(n => {{
         const color = nodeColor(n);
-        const clsLabel = n.primary ? "Primary Root" : (classLabels[n.classification] || n.classification);
+        let clsLabel = n.primary ? "Primary Root" : (classLabels[n.classification] || n.classification);
+        if (n.type === "routingrule" && n.ruleType && n.ruleType !== "Both") clsLabel += " (" + n.ruleType + ")";
 
         // Text filter
         const text = (n.name + " " + n.extension + " " + n.type + " " + clsLabel).toLowerCase();
@@ -2682,7 +2683,8 @@ function copyHandlerTable(btn) {{
         a.name.toLowerCase().localeCompare(b.name.toLowerCase())
     );
     sorted.forEach(n => {{
-        const clsLabel = n.primary ? "Primary Root" : (classLabels[n.classification] || n.classification);
+        let clsLabel = n.primary ? "Primary Root" : (classLabels[n.classification] || n.classification);
+        if (n.type === "routingrule" && n.ruleType && n.ruleType !== "Both") clsLabel += " (" + n.ruleType + ")";
         const outLinks = (outgoing[n.id] || []).map(e => e.label + " -> " + ((nodeMap[e.target] || {{}}).name || "?")).join("; ");
         const inLinks = (incoming[n.id] || []).map(e => ((nodeMap[e.source] || {{}}).name || "?") + " -> " + e.label).join("; ");
         let schedCond = "";
