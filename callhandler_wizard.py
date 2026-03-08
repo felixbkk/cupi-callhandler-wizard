@@ -2281,7 +2281,7 @@ function showDetails(d) {{
 
     if (d.audio && d.audio.length) {{
         html += '<h3 style="margin-top:12px;">Audio</h3>';
-        d.audio.forEach(a => {{
+        d.audio.filter(audioMatchesSchedule).forEach(a => {{
             const disTag = a.enabled === false ? ' <span style="color:#e74c3c; font-size:10px;">(disabled)</span>' : '';
             const sysTag = a.systemDefault ? ' <span style="color:#e67e22; font-size:10px;">(system default)</span>' : '';
             const codecTag = a.codecWarning ? ' <span style="color:#e67e22; font-size:10px;" title="' + esc(a.codec) + ' — may not play in browser">&#9888; ' + esc(a.codec) + '</span>' : '';
@@ -2591,7 +2591,7 @@ function renderTable() {{
             ? inLinks.map(e => esc((nodeMap[e.source] || {{}}).name || "?") + " &rarr; " + esc(e.label)).join("<br>")
             : '<span class="muted">None</span>';
 
-        const audioList = n.audio || [];
+        const audioList = (n.audio || []).filter(audioMatchesSchedule);
         const audioHtml = audioList.length
             ? audioList.map(a => {{
                 let h = '<span class="audio-link">' + esc(a.greeting) + '</span>' + schedTag(a.schedule) +
@@ -3224,9 +3224,9 @@ function createCard(node, isEntry) {{
         card.appendChild(condDiv);
     }}
 
-    // Audio
+    // Audio (filtered by active schedule)
     if (node.audio && node.audio.length) {{
-        node.audio.forEach(a => {{
+        node.audio.filter(audioMatchesSchedule).forEach(a => {{
             const row = document.createElement("div");
             row.className = "audio-row";
             const gUrl = greetingUrl(node.id, a.greeting);
