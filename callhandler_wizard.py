@@ -2911,6 +2911,20 @@ function renderTrees() {{
         return "2_" + e.label;
     }}
     Object.values(adj).forEach(edges => edges.sort((a, b) => edgeSortKey(a).localeCompare(edgeSortKey(b))));
+    // Check if a node auto-transfers with no greeting audio in the active schedule
+    const schedGreetings = {{ standard: "Standard", offhours: "Off Hours", holiday: "Holiday" }};
+    function getAutoTransferTarget(nodeId) {{
+        if (activeSchedule === "all") return null;
+        const node = nodeMap[nodeId];
+        if (!node || node.type === "routingrule") return null;
+        const edges = adj[nodeId] || [];
+        const autoEdge = edges.find(e => (e.label.startsWith("After:") || e.label.startsWith("Xfer:")) && e.schedule === activeSchedule);
+        if (!autoEdge) return null;
+        const greetName = schedGreetings[activeSchedule] || "";
+        const greetAudio = (node.audio || []).find(a => a.greeting === greetName && a.enabled !== false);
+        const hasAudio = greetAudio && !greetAudio.noAudio && !greetAudio.systemDefault;
+        return hasAudio ? null : autoEdge;
+    }}
 
     const roots = data.nodes.filter(n => n.type === "routingrule" && (adj[n.id] || []).length > 0);
     const primaryId = (data.nodes.find(n => n.primary) || {{}}).id;
@@ -2957,13 +2971,22 @@ function renderTrees() {{
             ? ' <span class="flow-muted">[' + conds.map(c => esc(c.param) + " " + esc(c.op) + " " + esc(c.value)).join(", ") + ']</span>'
             : "";
         const ruleTypeStr = root.ruleType && root.ruleType !== "Both" ? ' <span class="flow-muted">(' + esc(root.ruleType) + ' calls only)</span>' : "";
-        lines.push('<span class="flow-root">' + esc(root.name) + '</span>' + ruleTypeStr + condStr + ' -> <span class="flow-handler">' + esc(targetNode.name) + (targetNode.extension && !targetNode.name.includes(targetNode.extension) ? " (" + esc(targetNode.extension) + ")" : "") + '</span>' + (targetNode.scheduleName ? ' <span class="flow-muted">[' + esc(targetNode.scheduleName) + ']</span>' : ""));
-        lines.push(...audioLinks(targetNode, 1));
+        // Check if the root target auto-transfers (collapsed)
+        const rootAuto = getAutoTransferTarget(target.target);
+        if (rootAuto) {{
+            lines.push('<span class="flow-root">' + esc(root.name) + '</span>' + ruleTypeStr + condStr + ' -> <span class="flow-handler">' + esc(targetNode.name) + (targetNode.extension && !targetNode.name.includes(targetNode.extension) ? " (" + esc(targetNode.extension) + ")" : "") + '</span> <span class="flow-muted">(transfers immediately)</span>');
+        }} else {{
+            lines.push('<span class="flow-root">' + esc(root.name) + '</span>' + ruleTypeStr + condStr + ' -> <span class="flow-handler">' + esc(targetNode.name) + (targetNode.extension && !targetNode.name.includes(targetNode.extension) ? " (" + esc(targetNode.extension) + ")" : "") + '</span>' + (targetNode.scheduleName ? ' <span class="flow-muted">[' + esc(targetNode.scheduleName) + ']</span>' : ""));
+            lines.push(...audioLinks(targetNode, 1));
+        }}
 
         const visited = new Set([root.id]);
         function walk(nodeId, indent) {{
             if (!adj[nodeId]) return;
-            adj[nodeId].forEach(edge => {{
+            // If this node auto-transfers, only follow the transfer edge
+            const autoEdge = getAutoTransferTarget(nodeId);
+            const edgesToWalk = autoEdge ? [autoEdge] : (adj[nodeId] || []);
+            edgesToWalk.forEach(edge => {{
                 const tgt = nodeMap[edge.target];
                 const name = tgt ? tgt.name : "?";
                 const ext = tgt && tgt.extension && !tgt.name.includes(tgt.extension) ? " (" + esc(tgt.extension) + ")" : "";
@@ -2973,8 +2996,14 @@ function renderTrees() {{
                     return;
                 }}
                 visited.add(edge.target);
-                lines.push(prefix + '<span class="flow-label">[' + esc(edge.label) + ']</span> -> <span class="flow-handler">' + esc(name) + ext + '</span>' + schedTag(edge.schedule));
-                lines.push(...audioLinks(tgt, indent + 1));
+                // Check if the target itself auto-transfers
+                const tgtAuto = getAutoTransferTarget(edge.target);
+                if (tgtAuto) {{
+                    lines.push(prefix + '<span class="flow-label">[' + esc(edge.label) + ']</span> -> <span class="flow-handler">' + esc(name) + ext + '</span> <span class="flow-muted">(transfers immediately)</span>' + schedTag(edge.schedule));
+                }} else {{
+                    lines.push(prefix + '<span class="flow-label">[' + esc(edge.label) + ']</span> -> <span class="flow-handler">' + esc(name) + ext + '</span>' + schedTag(edge.schedule));
+                    lines.push(...audioLinks(tgt, indent + 1));
+                }}
                 walk(edge.target, indent + 1);
             }});
         }}
