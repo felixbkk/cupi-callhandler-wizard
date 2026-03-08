@@ -2926,7 +2926,7 @@ function renderTrees() {{
         if (!autoEdge) return null;
         const greetName = schedGreetings[activeSchedule] || "";
         const greetAudio = (node.audio || []).find(a => a.greeting === greetName && a.enabled !== false);
-        const hasAudio = greetAudio && !greetAudio.noAudio && !greetAudio.systemDefault;
+        const hasAudio = greetAudio && !greetAudio.noAudio;
         return hasAudio ? null : autoEdge;
     }}
 
@@ -3243,7 +3243,7 @@ function createCard(node, isEntry) {{
             const schedGreetings = {{ standard: "Standard", offhours: "Off Hours", holiday: "Holiday" }};
             const greetName = schedGreetings[activeSchedule] || "";
             const greetAudio = (node.audio || []).find(a => a.greeting === greetName && a.enabled !== false);
-            const hasAudio = greetAudio && !greetAudio.noAudio && !greetAudio.systemDefault;
+            const hasAudio = greetAudio && !greetAudio.noAudio;
             if (!hasAudio) autoTransfer = true;
         }}
     }}
