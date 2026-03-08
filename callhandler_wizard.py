@@ -2233,6 +2233,8 @@ const classLabels = {{
     deadend: "Dead End"
 }};
 
+function audioMatchesSchedule() {{ return true; }}
+
 function showDetails(d) {{
     const esc = s => {{ const el = document.createElement("span"); el.textContent = s || ""; return el.innerHTML; }};
 
@@ -3181,6 +3183,8 @@ function renderFlow() {{
             const targetCard = createCard(nodeMap[targetEdge.target]);
             container.appendChild(targetCard);
             trailPath.push({{ nodeId: targetEdge.target, label: targetEdge.label }});
+            // Auto-follow after-greeting chain for the active schedule
+            autoFollowAfterGreeting(targetEdge.target, container);
         }}
     }}
     updateBreadcrumb();
@@ -3311,6 +3315,38 @@ function createCard(node, isEntry) {{
         }}
     }}
     return card;
+}}
+
+function autoFollowAfterGreeting(nodeId, container) {{
+    // When a specific schedule is selected, auto-expand the after-greeting
+    // route for that schedule. Callers don't choose this — it fires
+    // automatically after the greeting plays.
+    if (activeSchedule === "all") return;
+    const visited = new Set(trailPath.map(p => p.nodeId));
+    let currentId = nodeId;
+    while (true) {{
+        const edges = getEdges(currentId);
+        // Find the after-greeting edge for the active schedule
+        const afterEdge = edges.find(e =>
+            (e.label.startsWith("After:") || e.label.startsWith("Xfer:")) &&
+            e.schedule === activeSchedule &&
+            nodeMap[e.target] && !visited.has(e.target)
+        );
+        if (!afterEdge) break;
+        // Highlight the row on the current card
+        const currentCard = document.getElementById("card-" + currentId);
+        if (currentCard) {{
+            currentCard.querySelectorAll(".menu-row").forEach(r => {{
+                if (r.dataset.target === afterEdge.target && r.dataset.label === afterEdge.label) r.classList.add("active-row");
+            }});
+        }}
+        visited.add(afterEdge.target);
+        container.appendChild(createConnector(afterEdge.label));
+        const nextCard = createCard(nodeMap[afterEdge.target]);
+        container.appendChild(nextCard);
+        trailPath.push({{ nodeId: afterEdge.target, label: afterEdge.label }});
+        currentId = afterEdge.target;
+    }}
 }}
 
 function expandTarget(edge, parentCard) {{
