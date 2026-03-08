@@ -2985,27 +2985,52 @@ function renderTrees() {{
         }}
 
         const visited = new Set([root.id]);
+        // In "All" mode, merge edges that go to the same target with the same label prefix
+        // e.g. [Xfer:Standard] -> X and [Xfer:Off Hours] -> X become one line with both tags
+        function mergeEdges(edges) {{
+            if (activeSchedule !== "all") return edges;
+            const groups = {{}};
+            const order = [];
+            edges.forEach(e => {{
+                // Group key: strip schedule from label for After:/Xfer:, keep full label for keys
+                const baseLabel = e.label.replace(/:(?:Standard|Off Hours|Holiday|Alternate)$/, "");
+                const key = baseLabel + "|" + e.target;
+                if (!groups[key]) {{
+                    groups[key] = {{ label: baseLabel, target: e.target, schedules: [] }};
+                    order.push(key);
+                }}
+                groups[key].schedules.push(e.schedule);
+            }});
+            return order.map(k => groups[k]);
+        }}
+        function mergedSchedTags(scheds) {{
+            if (!scheds || !scheds.length) return "";
+            const unique = [...new Set(scheds)].filter(s => s !== "always");
+            if (!unique.length) return "";
+            return unique.map(s => '<span class="sched-tag ' + s + '">' + (schedLabels[s] || s) + '</span>').join(" ");
+        }}
         function walk(nodeId, indent) {{
             if (!adj[nodeId]) return;
             // If this node auto-transfers, only follow the transfer edge
             const autoEdge = getAutoTransferTarget(nodeId);
             const edgesToWalk = autoEdge ? [autoEdge] : (adj[nodeId] || []);
-            edgesToWalk.forEach(edge => {{
+            mergeEdges(edgesToWalk).forEach(edge => {{
                 const tgt = nodeMap[edge.target];
                 const name = tgt ? tgt.name : "?";
                 const ext = tgt && tgt.extension && !tgt.name.includes(tgt.extension) ? " (" + esc(tgt.extension) + ")" : "";
                 const prefix = "  ".repeat(indent);
+                const tags = edge.schedules ? mergedSchedTags(edge.schedules) : schedTag(edge.schedule);
                 if (visited.has(edge.target)) {{
-                    lines.push(prefix + '<span class="flow-label">[' + esc(edge.label) + ']</span> -> <span class="flow-visited">' + esc(name) + ext + ' (see above)</span>' + schedTag(edge.schedule));
+                    lines.push(prefix + '<span class="flow-label">[' + esc(edge.label) + ']</span> -> <span class="flow-visited">' + esc(name) + ext + ' (see above)</span> ' + tags);
                     return;
                 }}
                 visited.add(edge.target);
                 // Check if the target itself auto-transfers
                 const tgtAuto = getAutoTransferTarget(edge.target);
                 if (tgtAuto) {{
-                    lines.push(prefix + '<span class="flow-label">[' + esc(edge.label) + ']</span> -> <span class="flow-handler">' + esc(name) + ext + '</span> <span class="flow-muted">(transfers immediately)</span>' + schedTag(edge.schedule));
+                    lines.push(prefix + '<span class="flow-label">[' + esc(edge.label) + ']</span> -> <span class="flow-handler">' + esc(name) + ext + '</span> <span class="flow-muted">(transfers immediately)</span> ' + tags);
                 }} else {{
-                    lines.push(prefix + '<span class="flow-label">[' + esc(edge.label) + ']</span> -> <span class="flow-handler">' + esc(name) + ext + '</span>' + schedTag(edge.schedule));
+                    lines.push(prefix + '<span class="flow-label">[' + esc(edge.label) + ']</span> -> <span class="flow-handler">' + esc(name) + ext + '</span> ' + tags);
                     lines.push(...audioLinks(tgt, indent + 1));
                 }}
                 walk(edge.target, indent + 1);
