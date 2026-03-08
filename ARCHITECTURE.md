@@ -97,9 +97,7 @@ Each node represents a call handler, interview handler, routing rule, phone exte
     "digitTimeoutMs": "1500",
     "postGreeting": False,
     "system": False,
-    "reachable_standard": True,
-    "reachable_offhours": True,
-    "reachable_holiday": False
+    "reachable": {"standard": True, "offhours": True, "holiday": False}
 }
 ```
 
@@ -190,6 +188,7 @@ All HTML files are written to `reports/<SiteName>_<timestamp>/`. Pages are self-
 | `schedules.html` | `generate_schedules_html` | None |
 | `test_times.html` | `generate_test_times_html` | None |
 | `audit.html` | `generate_audit_html` | None (categorized audit findings) |
+| `help.html` | `generate_help_html` | None (user guide, feature reference, WAV format table) |
 | `audit.log` | N/A (text file) | Text summary of all audit findings |
 
 ### Shared Features Across Pages
@@ -217,6 +216,7 @@ All external dependencies are stored in `resources/`:
 | `charset_normalizer-*.whl` | Encoding detection (requests dependency) |
 | `idna-*.whl` | Internationalized domain names (requests dependency) |
 | `urllib3-*.whl` | HTTP connection pooling (requests dependency) |
+| `favicon.svg` | Site icon used across all report pages |
 | `cities.json` | City-to-country-flag mapping for index page display |
 
 All Python wheels are pure Python (`py3-none-any`) and work on any OS without compilation.
@@ -233,7 +233,7 @@ Generated reports are fully self-contained:
 - All CSS and JavaScript is inline (no CDN references)
 - D3.js is copied from `resources/` into the report directory
 - Fonts use the system font stack (no web fonts)
-- Favicons are inline SVG data URIs
+- Favicon is copied from `resources/favicon.svg` into each report directory
 - Audio files are downloaded locally into `audio/`
 
 Reports can be viewed on any machine with a browser — no server or internet needed.
@@ -246,6 +246,6 @@ Reports can be viewed on any machine with a browser — no server or internet ne
 - **Audio detection** -- Greetings with `PlayWhat` of 1 or 2 are included (both have uploaded audio on typical CUC servers)
 - **Smart endpoint fallback** -- Sub-resource endpoints that return 404 on first try are skipped for remaining handlers
 - **Pagination** -- All list endpoints are fetched with pagination handling
-- **Parallel fetching** -- Per-handler sub-resources (menu entries, transfer rules, greetings) are fetched with ThreadPoolExecutor(8); audio downloads use ThreadPoolExecutor(4) with retry
+- **Parallel fetching** -- Per-handler sub-resources (menu entries, transfer rules, greetings) are fetched with ThreadPoolExecutor(4); audio downloads use ThreadPoolExecutor(4) with retry
 - **City flag lookup** -- Site name is matched against bundled `cities.json` to display an emoji flag on the index page
 - **Console logging** -- All output is tee'd to `run.log` in the report directory

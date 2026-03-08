@@ -44,6 +44,7 @@ Output is written to `reports/<SiteName>_<timestamp>/` containing:
 | `audit.html` | Categorized audit findings: warnings, holidays, classification, audio, extension dialing |
 | `help.html` | User guide explaining report features, node colors, warnings, and audio formats |
 | `audio/` | Downloaded greeting audio WAV files for inline playback |
+| `favicon.svg` | Site icon shared across all report pages |
 | `d3.v7.min.js` | Local D3 copy for offline use |
 | `audit.log` | Text summary of all audit findings |
 | `run.log` | Console output log for the generation run |
