@@ -1192,6 +1192,18 @@ def build_graph(call_handlers, interview_handlers, routing_rules, session, host,
     reachable_offhours = bfs_reachable(root_ids, schedule_filter("offhours"))
     reachable_holiday = bfs_reachable(root_ids, schedule_filter("holiday"))
 
+    # BFS depth: minimum hops from any routing rule to each node
+    depth_map = {}
+    depth_queue = deque((nid, 0) for nid in root_ids)
+    while depth_queue:
+        nid, d = depth_queue.popleft()
+        if nid in depth_map:
+            continue
+        depth_map[nid] = d
+        for tgt in outgoing.get(nid, set()):
+            if tgt not in depth_map:
+                depth_queue.append((tgt, d + 1))
+
     # Classify nodes using true reachability
     for nid, node in nodes.items():
         if node["type"] == "routingrule":
@@ -1226,6 +1238,10 @@ def build_graph(call_handlers, interview_handlers, routing_rules, session, host,
             node["classification"] = "deadend"
         else:
             node["classification"] = "normal"
+
+    # Store depth on each node (routing rules are depth 0)
+    for nid, node in nodes.items():
+        node["depth"] = depth_map.get(nid)
 
     # Identify primary root: the root call handler with the most incoming edges
     root_handlers = [(nid, node) for nid, node in nodes.items()
@@ -1671,6 +1687,24 @@ def collect_audit_findings(nodes, holiday_audit):
                 "keys": uk,
             })
 
+    # Deep handlers: reachable call handlers at depth >= 5 steps from entry
+    DEEP_THRESHOLD = 5
+    deep_handlers = []
+    max_depth = 0
+    for n in nodes:
+        d = n.get("depth")
+        if d is not None and d > max_depth:
+            max_depth = d
+        if n.get("type") not in ("callhandler", "interview", "directory"):
+            continue
+        if d is not None and d >= DEEP_THRESHOLD and n.get("classification") in ("root", "normal"):
+            deep_handlers.append({
+                "handler": n.get("name", ""),
+                "id": n["id"],
+                "depth": d,
+            })
+    deep_handlers.sort(key=lambda x: -x["depth"])
+
     return {
         "handlerWarnings": handler_warnings,
         "holidayAudit": holiday_audit or [],
@@ -1682,6 +1716,8 @@ def collect_audit_findings(nodes, holiday_audit):
         "orphans": orphans,
         "unreachable": unreachable,
         "deadEnds": dead_ends,
+        "deepHandlers": deep_handlers,
+        "maxDepth": max_depth,
     }
 
 
@@ -1741,7 +1777,14 @@ def _write_audit_log(site_dir, findings, warned_nodes, holiday_audit, site_name)
             keys = ", ".join(n["keys"])
             audit_lines.append(f"  [WARNING] {n['handler']}: unlocked keys {keys} — verify restriction table blocks external dialing")
 
-    total_warnings = sum(len(w) for _, w in warned_nodes) + len(codec_warnings) + len(audio_failures) + len(ext_dialing)
+    deep = findings["deepHandlers"]
+    if deep:
+        audit_lines.append(f"\nMENU DEPTH ({len(deep)} deep handlers, max depth: {findings['maxDepth']} steps)")
+        audit_lines.append("-" * 40)
+        for h in deep:
+            audit_lines.append(f"  [WARNING] {h['handler']}: {h['depth']} steps from entry point")
+
+    total_warnings = sum(len(w) for _, w in warned_nodes) + len(codec_warnings) + len(audio_failures) + len(ext_dialing) + len(deep)
     total_critical = sum(1 for f in holiday_audit if f["level"] == "critical") if holiday_audit else 0
     has_findings = total_warnings > 0 or total_critical > 0 or orphans or unreachable or dead_ends
 
@@ -4159,6 +4202,9 @@ a.summary-card:hover {{ border-color: #1abc9c; }}
 <h2 id="sec-extdial">Extension Dialing <span id="badge-extdial"></span></h2>
 <div id="extDialSection"></div>
 
+<h2 id="sec-depth">Menu Depth <span id="badge-depth"></span></h2>
+<div id="depthSection"></div>
+
 <h2 id="sec-sysdefault">System Default Greetings <span id="badge-sysdefault"></span></h2>
 <div id="sysDefaultSection"></div>
 
@@ -4191,8 +4237,9 @@ const classificationCount = data.orphans.length + data.unreachable.length + data
 const audioIssues = data.codecWarnings.length + data.noAudioItems.length + data.audioDownloadFailures.length;
 const sysDefaultCount = data.systemDefaultAudio.length;
 const extDialCount = data.extDialingItems.length;
+const deepCount = data.deepHandlers.length;
 
-const totalIssues = totalWarnings + holidayCritical + holidayWarnings + classificationCount + audioIssues;
+const totalIssues = totalWarnings + holidayCritical + holidayWarnings + classificationCount + audioIssues + deepCount;
 
 // Summary bar
 (function() {{
@@ -4204,6 +4251,7 @@ const totalIssues = totalWarnings + holidayCritical + holidayWarnings + classifi
         {{ count: classificationCount, label: "Classification", cls: classificationCount > 0 ? "warning" : "clean", href: "#sec-classification" }},
         {{ count: audioIssues, label: "Audio Issues", cls: audioIssues > 0 ? "warning" : "clean", href: "#sec-audio" }},
         {{ count: extDialCount, label: "Ext. Dialing", cls: extDialCount > 0 ? "warning" : "clean", href: "#sec-extdial" }},
+        {{ count: deepCount, label: "Deep Handlers", cls: deepCount > 0 ? "warning" : "clean", href: "#sec-depth" }},
         {{ count: sysDefaultCount, label: "System Default", cls: sysDefaultCount > 0 ? "warning" : "clean", href: "#sec-sysdefault" }},
     ];
     bar.innerHTML = cards.map(c =>
@@ -4218,6 +4266,7 @@ document.getElementById("badge-holidays").innerHTML = badge(holidayCritical + ho
 document.getElementById("badge-classification").innerHTML = badge(classificationCount, "warning");
 document.getElementById("badge-audio").innerHTML = badge(audioIssues, "warning");
 document.getElementById("badge-extdial").innerHTML = badge(extDialCount, "warning");
+document.getElementById("badge-depth").innerHTML = badge(deepCount, "warning");
 document.getElementById("badge-sysdefault").innerHTML = badge(sysDefaultCount, "info");
 
 // Handler warnings
@@ -4309,6 +4358,24 @@ document.getElementById("badge-sysdefault").innerHTML = badge(sysDefaultCount, "
     html += '<table><thead><tr><th>Handler</th><th>Unlocked Keys</th><th>Note</th></tr></thead><tbody>';
     data.extDialingItems.forEach(e => {{
         html += '<tr><td>' + handlerLink(e.handler, e.id) + '</td><td>' + e.keys.join(', ') + '</td><td class="level-warning">Verify restriction table blocks external dialing</td></tr>';
+    }});
+    html += '</tbody></table>';
+    el.innerHTML = html;
+}})();
+
+// Menu depth
+(function() {{
+    const el = document.getElementById("depthSection");
+    if (!data.deepHandlers.length) {{
+        el.innerHTML = '<p class="section-empty">No handlers are deeper than 4 steps from an entry point (max depth: ' + data.maxDepth + ').</p>';
+        return;
+    }}
+    let html = '<p style="font-size:13px; color:#888; margin-bottom:10px;">Handlers 5+ routing steps from the nearest entry point. Deep IVR menus frustrate callers — consider flattening. Max depth: ' + data.maxDepth + ' steps.</p>';
+    html += '<table><thead><tr><th>Handler</th><th>Depth</th><th>Note</th></tr></thead><tbody>';
+    data.deepHandlers.forEach(h => {{
+        const severity = h.depth >= 7 ? "level-critical" : "level-warning";
+        const note = h.depth >= 7 ? "Very deep — callers are unlikely to reach this" : "Consider flattening the menu path";
+        html += '<tr><td>' + handlerLink(h.handler, h.id) + '</td><td class="' + severity + '">' + h.depth + ' steps</td><td>' + note + '</td></tr>';
     }});
     html += '</tbody></table>';
     el.innerHTML = html;
@@ -4836,7 +4903,8 @@ def cmd_generate(args):
             classifications[c] = classifications.get(c, 0) + 1
 
         audio_count = sum(len(n.get("audio", [])) for n in nodes)
-        print(f"\nGraph: {len(nodes)} nodes, {len(edges)} edges, {audio_count} audio greetings")
+        max_depth = max((n.get("depth") or 0 for n in nodes), default=0)
+        print(f"\nGraph: {len(nodes)} nodes, {len(edges)} edges, {audio_count} audio greetings, max depth {max_depth}")
         for cls, count in sorted(classifications.items()):
             print(f"  {cls}: {count}")
 
