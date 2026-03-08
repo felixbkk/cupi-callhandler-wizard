@@ -2951,7 +2951,8 @@ function renderTrees() {{
         const condStr = conds.length
             ? ' <span class="flow-muted">[' + conds.map(c => esc(c.param) + " " + esc(c.op) + " " + esc(c.value)).join(", ") + ']</span>'
             : "";
-        lines.push('<span class="flow-root">' + esc(root.name) + '</span>' + condStr + ' -> <span class="flow-handler">' + esc(targetNode.name) + (targetNode.extension && !targetNode.name.includes(targetNode.extension) ? " (" + esc(targetNode.extension) + ")" : "") + '</span>' + (targetNode.scheduleName ? ' <span class="flow-muted">[' + esc(targetNode.scheduleName) + ']</span>' : ""));
+        const ruleTypeStr = root.ruleType && root.ruleType !== "Both" ? ' <span class="flow-muted">(' + esc(root.ruleType) + ' calls only)</span>' : "";
+        lines.push('<span class="flow-root">' + esc(root.name) + '</span>' + ruleTypeStr + condStr + ' -> <span class="flow-handler">' + esc(targetNode.name) + (targetNode.extension && !targetNode.name.includes(targetNode.extension) ? " (" + esc(targetNode.extension) + ")" : "") + '</span>' + (targetNode.scheduleName ? ' <span class="flow-muted">[' + esc(targetNode.scheduleName) + ']</span>' : ""));
         lines.push(...audioLinks(targetNode, 1));
 
         const visited = new Set([root.id]);
@@ -3219,6 +3220,18 @@ function createCard(node, isEntry) {{
     if (aUrl) badges.innerHTML += '<a href="' + esc(aUrl) + '" target="_blank" style="color:#1abc9c; font-size:11px; text-decoration:none; margin-left:4px;" title="View on ' + esc(data.siteName || 'Unity') + ' Unity">&#9741;</a>';
     header.appendChild(badges);
     card.appendChild(header);
+
+    // Routing rule type callout
+    if (node.type === "routingrule" && node.ruleType && node.ruleType !== "Both") {{
+        const ruleNote = document.createElement("div");
+        ruleNote.style.cssText = "padding: 6px 16px; background: #1a2a1a; border-bottom: 1px solid #1a3a1a; color: #2ecc71; font-size: 12px;";
+        if (node.ruleType === "Direct") {{
+            ruleNote.innerHTML = '&#9742; <strong>Direct calls only</strong> — this rule matches calls dialed directly to the number, not forwarded calls.';
+        }} else if (node.ruleType === "Forwarded") {{
+            ruleNote.innerHTML = '&#8631; <strong>Forwarded calls only</strong> — this rule matches forwarded calls, not direct calls.';
+        }}
+        card.appendChild(ruleNote);
+    }}
 
     // Conditions (routing rules)
     if (node.conditions && node.conditions.length) {{
