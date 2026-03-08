@@ -1478,6 +1478,271 @@ def copy_favicon(site_dir):
     return _copy_resource(site_dir, FAVICON_FILENAME)
 
 
+# ---------------------------------------------------------------------------
+# Shared JS utility snippets (injected into HTML templates to avoid duplication)
+# ---------------------------------------------------------------------------
+
+_JS_ESC = """function esc(s) {
+    const d = document.createElement("div");
+    d.textContent = s || "";
+    return d.innerHTML;
+}"""
+
+_JS_FLASH_BTN = """function flashBtn(btn, msg) {
+    const orig = btn.textContent;
+    btn.textContent = msg || "Copied!";
+    setTimeout(() => btn.textContent = orig, 1500);
+}"""
+
+_JS_COPY_TABLE_AS_MD = """function copyTableAsMd(tableId, btn) {
+    const table = document.getElementById(tableId);
+    const headerCells = Array.from(table.querySelectorAll("thead th"));
+    const headers = headerCells.map(th => th.textContent);
+    const lines = [headers.join(" | "), headers.map(() => "---").join(" | ")];
+    table.querySelectorAll("tbody tr").forEach(tr => {
+        const cells = Array.from(tr.querySelectorAll("td")).map(td => td.textContent.trim());
+        lines.push(cells.join(" | "));
+    });
+    navigator.clipboard.writeText(lines.join("\\n")).then(() => flashBtn(btn));
+}"""
+
+
+def _js_schedule_utils(render_fn, extra_on_change=""):
+    """Return JS schedule helper functions. *render_fn* is called in setSchedule()."""
+    return f"""const schedLabels = {{ standard: "Standard", offhours: "Off Hours", holiday: "Holiday", alternate: "Alternate" }};
+function schedTag(sched) {{
+    if (!sched || sched === "always") return "";
+    if (activeSchedule !== "all" && sched === activeSchedule) return "";
+    return '<span class="sched-tag ' + sched + '">' + (schedLabels[sched] || sched) + '</span>';
+}}
+
+function setSchedule(mode) {{
+    activeSchedule = mode;
+    document.querySelectorAll(".schedule-btn").forEach(btn => {{
+        btn.classList.toggle("active", btn.dataset.schedule === mode);
+    }});
+    {extra_on_change}
+    {render_fn}();
+}}
+
+function edgeMatchesSchedule(e) {{
+    if (activeSchedule === "all") return true;
+    return e.schedule === "always" || e.schedule === activeSchedule;
+}}
+
+function audioMatchesSchedule(a) {{
+    if (activeSchedule === "all") return true;
+    return a.schedule === "always" || a.schedule === activeSchedule;
+}}"""
+
+
+def _js_admin_urls(data_var="data"):
+    """Return JS adminUrl/greetingUrl functions referencing the given data variable."""
+    return f"""function adminUrl(node) {{
+    if (!{data_var}.host || !node || !node.id) return "";
+    const ops = {{
+        callhandler: "callhandler.do?op=read",
+        interview: "interviewhandler.do?op=read",
+        directory: "directoryhandler.do?op=read",
+        routingrule: "routingrule.do?op=read",
+    }};
+    const op = ops[node.type];
+    return op ? {data_var}.host + "/cuadmin/" + op + "&objectId=" + node.id : "";
+}}
+
+function greetingUrl(handlerId, greetingType) {{
+    if (!{data_var}.host) return "";
+    return {data_var}.host + "/cuadmin/greeting.do?op=readCallhandler&objectId=" + handlerId + "&greetingType=" + encodeURIComponent(greetingType);
+}}"""
+
+
+# ---------------------------------------------------------------------------
+# Shared base CSS (injected into page templates via f-string interpolation)
+# ---------------------------------------------------------------------------
+
+_BASE_CSS = """\
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #1a1a2e; color: #e0e0e0; padding: 24px; }
+h1 { color: #e94560; margin-bottom: 8px; }
+h2 { color: #e94560; margin: 32px 0 12px 0; font-size: 20px; border-bottom: 1px solid #0f3460; padding-bottom: 8px; }
+table { width: 100%; border-collapse: collapse; margin-bottom: 24px; font-size: 13px; }
+th { background: #16213e; color: #e94560; text-align: left; padding: 10px 12px; position: sticky; top: 0; border-bottom: 2px solid #0f3460; }
+td { padding: 8px 12px; border-bottom: 1px solid #0f3460; vertical-align: top; }
+tr:hover { background: #16213e; }
+.muted { color: #555; }
+.sched-tag { display: inline-block; padding: 1px 6px; border-radius: 8px; font-size: 10px; font-weight: 600; margin-left: 4px; }
+.sched-tag.offhours { background: #5b3a1e; color: #f39c12; }
+.sched-tag.holiday { background: #4a1a2e; color: #e74c3c; }
+.sched-tag.standard { background: #1a3a2e; color: #2ecc71; }
+.sched-tag.alternate { background: #2a1a4e; color: #9b59b6; }
+.section-header { display: flex; align-items: center; gap: 12px; }
+.section-header h2 { margin: 0; }
+.copy-btn { padding: 4px 10px; border: 1px solid #0f3460; background: #16213e; color: #888; cursor: pointer; border-radius: 3px; font-size: 11px; transition: all 0.2s; }
+.copy-btn:hover { color: #e0e0e0; border-color: #e94560; }
+.back-to-top { position: fixed; bottom: 16px; left: 16px; padding: 8px 14px; background: #0f3460; border: 1px solid #0f3460; color: #e0e0e0; cursor: pointer; border-radius: 4px; font-size: 12px; z-index: 100; text-decoration: none; }
+.back-to-top:hover { background: #1a1a4e; border-color: #e94560; }"""
+
+
+# ---------------------------------------------------------------------------
+# Audit finding collector (shared between generate_audit_html and cmd_generate)
+# ---------------------------------------------------------------------------
+
+def collect_audit_findings(nodes, holiday_audit):
+    """Walk nodes to collect categorized audit findings."""
+    handler_warnings = []
+    for n in nodes:
+        if n.get("type") != "callhandler":
+            continue
+        ws = n.get("warnings", [])
+        if ws:
+            handler_warnings.append({
+                "id": n["id"],
+                "name": n.get("name", ""),
+                "extension": n.get("extension", ""),
+                "warnings": ws,
+            })
+
+    codec_warnings = []
+    system_default_audio = []
+    no_audio_items = []
+    audio_download_failures = []
+    for n in nodes:
+        for a in n.get("audio", []):
+            if a.get("codecWarning"):
+                codec_warnings.append({
+                    "handler": n.get("name", ""),
+                    "id": n["id"],
+                    "greeting": a.get("greeting", ""),
+                    "codec": a.get("codec", "Unknown"),
+                })
+            if a.get("systemDefault"):
+                system_default_audio.append({
+                    "handler": n.get("name", ""),
+                    "id": n["id"],
+                    "greeting": a.get("greeting", ""),
+                    "enabled": a.get("enabled", True),
+                })
+            if a.get("noAudio") and a.get("greeting") == "Standard" and a.get("enabled", True):
+                reachable = n.get("classification") in ("root", "normal")
+                no_audio_items.append({
+                    "handler": n.get("name", ""),
+                    "id": n["id"],
+                    "reachable": reachable,
+                })
+            if a.get("failReason"):
+                audio_download_failures.append({
+                    "handler": n.get("name", ""),
+                    "id": n["id"],
+                    "greeting": a.get("greeting", ""),
+                    "reason": a.get("failReason", "Unknown"),
+                })
+
+    orphans = [{"name": n["name"], "id": n["id"]} for n in nodes if n.get("classification") == "orphan"]
+    unreachable = [{"name": n["name"], "id": n["id"]} for n in nodes if n.get("classification") == "unreachable"]
+    dead_ends = [{"name": n["name"], "id": n["id"]} for n in nodes if n.get("classification") == "deadend"]
+
+    ext_dialing_items = []
+    for n in nodes:
+        if n.get("type") != "callhandler":
+            continue
+        uk = n.get("unlockedKeys", [])
+        if uk and n.get("classification") in ("root", "normal"):
+            ext_dialing_items.append({
+                "handler": n.get("name", ""),
+                "id": n["id"],
+                "keys": uk,
+            })
+
+    return {
+        "handlerWarnings": handler_warnings,
+        "holidayAudit": holiday_audit or [],
+        "codecWarnings": codec_warnings,
+        "systemDefaultAudio": system_default_audio,
+        "noAudioItems": no_audio_items,
+        "audioDownloadFailures": audio_download_failures,
+        "extDialingItems": ext_dialing_items,
+        "orphans": orphans,
+        "unreachable": unreachable,
+        "deadEnds": dead_ends,
+    }
+
+
+def _write_audit_log(site_dir, findings, warned_nodes, holiday_audit, site_name):
+    """Write audit.log with all findings in text format."""
+    audit_lines = []
+    audit_lines.append(f"Call Handler Wizard Audit — {site_name or 'Unknown Site'}")
+    audit_lines.append(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    audit_lines.append(f"{'='*60}")
+
+    if warned_nodes:
+        audit_lines.append(f"\nHANDLER WARNINGS ({sum(len(w) for _, w in warned_nodes)} issues across {len(warned_nodes)} handlers)")
+        audit_lines.append("-" * 40)
+        for name, warnings in warned_nodes:
+            for w in warnings:
+                audit_lines.append(f"  [WARNING] {name}: {w}")
+
+    if holiday_audit:
+        audit_lines.append(f"\nHOLIDAY CALENDAR AUDIT")
+        audit_lines.append("-" * 40)
+        for finding in holiday_audit:
+            tag = "CRITICAL" if finding["level"] == "critical" else "WARNING" if finding["level"] == "warning" else "OK"
+            audit_lines.append(f"  [{tag}] {finding['message']}")
+
+    audio_failures = findings["audioDownloadFailures"]
+    if audio_failures:
+        audit_lines.append(f"\nAUDIO DOWNLOAD FAILURES ({len(audio_failures)})")
+        audit_lines.append("-" * 40)
+        for f_item in audio_failures:
+            audit_lines.append(f"  [FAILED] {f_item['handler']} — {f_item['greeting']}: {f_item['reason']}")
+
+    codec_warnings = findings["codecWarnings"]
+    if codec_warnings:
+        audit_lines.append(f"\nAUDIO CODEC WARNINGS")
+        audit_lines.append("-" * 40)
+        for cw in codec_warnings:
+            audit_lines.append(f"  [WARNING] {cw['handler']} — {cw['greeting']}: {cw['codec']} (not playable in browser)")
+
+    orphans = findings["orphans"]
+    unreachable = findings["unreachable"]
+    dead_ends = findings["deadEnds"]
+    if orphans or unreachable or dead_ends:
+        audit_lines.append(f"\nCLASSIFICATION CONCERNS")
+        audit_lines.append("-" * 40)
+        if orphans:
+            audit_lines.append(f"  [WARNING] {len(orphans)} true orphan(s): {', '.join(n['name'] for n in orphans)}")
+        if unreachable:
+            audit_lines.append(f"  [WARNING] {len(unreachable)} unreachable subtree(s): {', '.join(n['name'] for n in unreachable)}")
+        if dead_ends:
+            audit_lines.append(f"  [WARNING] {len(dead_ends)} dead end(s): {', '.join(n['name'] for n in dead_ends)}")
+
+    ext_dialing = findings["extDialingItems"]
+    if ext_dialing:
+        audit_lines.append(f"\nEXTENSION DIALING ({len(ext_dialing)} handlers)")
+        audit_lines.append("-" * 40)
+        for n in ext_dialing:
+            keys = ", ".join(n["keys"])
+            audit_lines.append(f"  [WARNING] {n['handler']}: unlocked keys {keys} — verify restriction table blocks external dialing")
+
+    total_warnings = sum(len(w) for _, w in warned_nodes) + len(codec_warnings) + len(audio_failures) + len(ext_dialing)
+    total_critical = sum(1 for f in holiday_audit if f["level"] == "critical") if holiday_audit else 0
+    has_findings = total_warnings > 0 or total_critical > 0 or orphans or unreachable or dead_ends
+
+    audit_lines.append(f"\n{'='*60}")
+    if has_findings:
+        audit_lines.append(f"RESULT: AUDIT FINDINGS DETECTED")
+        audit_lines.append(f"  {total_critical} critical, {total_warnings} warnings, "
+                         f"{len(orphans)} orphans, {len(unreachable)} unreachable, {len(dead_ends)} dead ends")
+    else:
+        audit_lines.append(f"RESULT: PASS — no issues detected")
+    audit_lines.append(f"{'='*60}")
+
+    audit_path = os.path.join(site_dir, "audit.log")
+    with open(audit_path, "w", encoding="utf-8") as f_out:
+        f_out.write("\n".join(audit_lines) + "\n")
+
+    return has_findings, total_warnings, total_critical, len(orphans), len(unreachable), len(dead_ends), audit_path
+
+
 def generate_html(nodes, edges, d3_local=False, site_name="", host=""):
     graph_data = json.dumps({"nodes": nodes, "links": edges, "host": host, "siteName": site_name})
     d3_tag = f'<script src="{D3_FILENAME}"></script>' if d3_local else f'<script src="{D3_CDN_URL}"></script>'
@@ -1569,22 +1834,7 @@ marker {{ fill: #666; }}
 <script>
 const graphData = {graph_data};
 
-function adminUrl(node) {{
-    if (!graphData.host || !node || !node.id) return "";
-    const ops = {{
-        callhandler: "callhandler.do?op=read",
-        interview: "interviewhandler.do?op=read",
-        directory: "directoryhandler.do?op=read",
-        routingrule: "routingrule.do?op=read",
-    }};
-    const op = ops[node.type];
-    return op ? graphData.host + "/cuadmin/" + op + "&objectId=" + node.id : "";
-}}
-
-function greetingUrl(handlerId, greetingType) {{
-    if (!graphData.host) return "";
-    return graphData.host + "/cuadmin/greeting.do?op=readCallhandler&objectId=" + handlerId + "&greetingType=" + encodeURIComponent(greetingType);
-}}
+{_js_admin_urls("graphData")}
 
 const colorMap = {{
     root: "#2ecc71",
@@ -2145,10 +2395,7 @@ def generate_table_html(nodes, edges, holiday_schedules, schedules, site_name=""
 <title>{title_prefix}Call Handler Report</title>
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <style>
-* {{ margin: 0; padding: 0; box-sizing: border-box; }}
-body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #1a1a2e; color: #e0e0e0; padding: 24px; }}
-h1 {{ color: #e94560; margin-bottom: 8px; }}
-h2 {{ color: #e94560; margin: 32px 0 12px 0; font-size: 20px; border-bottom: 1px solid #0f3460; padding-bottom: 8px; }}
+{_BASE_CSS}
 .summary {{ display: flex; gap: 12px; flex-wrap: wrap; margin: 16px 0; }}
 .summary-badge {{ padding: 6px 14px; border-radius: 4px; font-size: 13px; font-weight: 600; color: #fff; }}
 .stats {{ color: #888; font-size: 14px; margin-bottom: 16px; }}
@@ -2156,19 +2403,12 @@ h2 {{ color: #e94560; margin: 32px 0 12px 0; font-size: 20px; border-bottom: 1px
 .toc-label {{ font-size: 13px; color: #888; font-weight: 600; }}
 .toc a {{ color: #1abc9c; font-size: 13px; text-decoration: none; padding: 4px 8px; border-radius: 3px; transition: background 0.2s; }}
 .toc a:hover {{ background: #0f3460; text-decoration: underline; }}
-table {{ width: 100%; border-collapse: collapse; margin-bottom: 24px; font-size: 13px; }}
-th {{ background: #16213e; color: #e94560; text-align: left; padding: 10px 12px; position: sticky; top: 0; border-bottom: 2px solid #0f3460; }}
-td {{ padding: 8px 12px; border-bottom: 1px solid #0f3460; vertical-align: top; }}
-tr:hover {{ background: #16213e; }}
-.muted {{ color: #555; }}
 .oid {{ font-family: monospace; font-size: 11px; color: #666; }}
 .filter-bar {{ margin: 12px 0; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }}
 .filter-bar input {{ padding: 8px 12px; border: 1px solid #0f3460; background: #16213e; color: #e0e0e0; border-radius: 4px; font-size: 13px; width: 300px; }}
 .filter-bar select {{ padding: 8px 12px; border: 1px solid #0f3460; background: #16213e; color: #e0e0e0; border-radius: 4px; font-size: 13px; }}
 .audio-link {{ color: #1abc9c; text-decoration: none; font-size: 12px; }}
 .audio-link:hover {{ text-decoration: underline; }}
-.back-to-top {{ position: fixed; bottom: 16px; left: 16px; padding: 8px 14px; background: #0f3460; border: 1px solid #0f3460; color: #e0e0e0; cursor: pointer; border-radius: 4px; font-size: 12px; z-index: 100; text-decoration: none; }}
-.back-to-top:hover {{ background: #1a1a4e; border-color: #e94560; }}
 .debug-toggle {{ position: fixed; bottom: 16px; right: 16px; padding: 8px 14px; background: #0f3460; border: 1px solid #e94560; color: #e94560; cursor: pointer; border-radius: 4px; font-size: 12px; z-index: 100; }}
 .debug-toggle:hover {{ background: #1a1a4e; }}
 #debugPanel {{ display: none; background: #0d1b2a; border: 1px solid #0f3460; border-radius: 8px; padding: 20px; margin-top: 32px; }}
@@ -2184,15 +2424,6 @@ tr:hover {{ background: #16213e; }}
 .schedule-btn.active {{ background: #0f3460; border-color: #e94560; color: #fff; }}
 .schedule-label {{ font-size: 13px; color: #888; align-self: center; margin-right: 8px; }}
 .diff-highlight {{ background: #2a1a3e; }}
-.sched-tag {{ display: inline-block; padding: 1px 6px; border-radius: 8px; font-size: 10px; font-weight: 600; margin-left: 4px; }}
-.sched-tag.offhours {{ background: #5b3a1e; color: #f39c12; }}
-.sched-tag.holiday {{ background: #4a1a2e; color: #e74c3c; }}
-.sched-tag.standard {{ background: #1a3a2e; color: #2ecc71; }}
-.sched-tag.alternate {{ background: #2a1a4e; color: #9b59b6; }}
-.section-header {{ display: flex; align-items: center; gap: 12px; }}
-.section-header h2 {{ margin: 0; }}
-.copy-btn {{ padding: 4px 10px; border: 1px solid #0f3460; background: #16213e; color: #888; cursor: pointer; border-radius: 3px; font-size: 11px; transition: all 0.2s; }}
-.copy-btn:hover {{ color: #e0e0e0; border-color: #e94560; }}
 </style>
 </head>
 <body>
@@ -2249,53 +2480,11 @@ function nodeColor(n) {{
     return typeColors[n.type] || classColors[n.classification] || "#3498db";
 }}
 
-function esc(s) {{
-    const d = document.createElement("div");
-    d.textContent = s || "";
-    return d.innerHTML;
-}}
+{_JS_ESC}
 
-function adminUrl(node) {{
-    if (!data.host || !node || !node.id) return "";
-    const ops = {{
-        callhandler: "callhandler.do?op=read",
-        interview: "interviewhandler.do?op=read",
-        directory: "directoryhandler.do?op=read",
-        routingrule: "routingrule.do?op=read",
-    }};
-    const op = ops[node.type];
-    return op ? data.host + "/cuadmin/" + op + "&objectId=" + node.id : "";
-}}
+{_js_admin_urls()}
 
-function greetingUrl(handlerId, greetingType) {{
-    if (!data.host) return "";
-    return data.host + "/cuadmin/greeting.do?op=readCallhandler&objectId=" + handlerId + "&greetingType=" + encodeURIComponent(greetingType);
-}}
-
-function edgeMatchesSchedule(e) {{
-    if (activeSchedule === "all") return true;
-    return e.schedule === "always" || e.schedule === activeSchedule;
-}}
-
-function audioMatchesSchedule(a) {{
-    if (activeSchedule === "all") return true;
-    return a.schedule === "always" || a.schedule === activeSchedule;
-}}
-
-const schedLabels = {{ standard: "Standard", offhours: "Off Hours", holiday: "Holiday", alternate: "Alternate" }};
-function schedTag(sched) {{
-    if (!sched || sched === "always") return "";
-    if (activeSchedule !== "all" && sched === activeSchedule) return "";
-    return '<span class="sched-tag ' + sched + '">' + (schedLabels[sched] || sched) + '</span>';
-}}
-
-function setSchedule(mode) {{
-    activeSchedule = mode;
-    document.querySelectorAll(".schedule-btn").forEach(btn => {{
-        btn.classList.toggle("active", btn.dataset.schedule === mode);
-    }});
-    renderTable();
-}}
+{_js_schedule_utils("renderTable")}
 
 function renderTable() {{
     const search = (document.getElementById("search").value || "").toLowerCase();
@@ -2405,11 +2594,7 @@ function renderTable() {{
 renderTable();
 
 // --- Copy helpers ---
-function flashBtn(btn, msg) {{
-    const orig = btn.textContent;
-    btn.textContent = msg || "Copied!";
-    setTimeout(() => btn.textContent = orig, 1500);
-}}
+{_JS_FLASH_BTN}
 
 function copyHandlerTable(btn) {{
     const activeEdges = data.edges.filter(edgeMatchesSchedule);
@@ -2443,17 +2628,7 @@ function copyHandlerTable(btn) {{
     navigator.clipboard.writeText(rows.join("\\n")).then(() => flashBtn(btn));
 }}
 
-function copyTableAsMd(tableId, btn) {{
-    const table = document.getElementById(tableId);
-    const headerCells = Array.from(table.querySelectorAll("thead th"));
-    const headers = headerCells.map(th => th.textContent);
-    const lines = [headers.join(" | "), headers.map(() => "---").join(" | ")];
-    table.querySelectorAll("tbody tr").forEach(tr => {{
-        const cells = Array.from(tr.querySelectorAll("td")).map(td => td.textContent.trim());
-        lines.push(cells.join(" | "));
-    }});
-    navigator.clipboard.writeText(lines.join("\\n")).then(() => flashBtn(btn));
-}}
+{_JS_COPY_TABLE_AS_MD}
 
 // --- Debug Tools ---
 function toggleDebug() {{
@@ -2611,11 +2786,10 @@ def generate_flow_trees_html(nodes, edges, site_name="", host=""):
 <title>{title_prefix}Call Flow Trees</title>
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <style>
-* {{ margin: 0; padding: 0; box-sizing: border-box; }}
-body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #1a1a2e; color: #e0e0e0; padding: 24px; }}
-h1 {{ color: #e94560; margin-bottom: 4px; }}
+{_BASE_CSS}
+h1 {{ margin-bottom: 4px; }}
 .subtitle {{ color: #888; font-size: 14px; margin-bottom: 16px; }}
-h2 {{ color: #e94560; margin: 24px 0 10px 0; font-size: 18px; border-bottom: 1px solid #0f3460; padding-bottom: 6px; }}
+h2 {{ margin: 24px 0 10px 0; font-size: 18px; padding-bottom: 6px; }}
 .schedule-bar {{ display: flex; gap: 4px; margin: 16px 0; }}
 .schedule-btn {{ padding: 8px 16px; border: 2px solid #0f3460; background: #16213e; color: #e0e0e0; cursor: pointer; border-radius: 4px; font-size: 13px; font-weight: 600; transition: all 0.2s; }}
 .schedule-btn:hover {{ border-color: #e94560; }}
@@ -2627,19 +2801,7 @@ h2 {{ color: #e94560; margin: 24px 0 10px 0; font-size: 18px; border-bottom: 1px
 .flow-tree .flow-label {{ color: #e94560; }}
 .flow-tree .flow-muted {{ color: #555; }}
 .flow-tree .flow-visited {{ color: #555; font-style: italic; }}
-.sched-tag {{ display: inline-block; padding: 1px 6px; border-radius: 8px; font-size: 10px; font-weight: 600; margin-left: 4px; }}
-.sched-tag.offhours {{ background: #5b3a1e; color: #f39c12; }}
-.sched-tag.holiday {{ background: #4a1a2e; color: #e74c3c; }}
-.sched-tag.standard {{ background: #1a3a2e; color: #2ecc71; }}
-.sched-tag.alternate {{ background: #2a1a4e; color: #9b59b6; }}
 .audio-link {{ color: #1abc9c; text-decoration: none; font-size: 12px; }}
-.muted {{ color: #555; }}
-.section-header {{ display: flex; align-items: center; gap: 12px; }}
-.section-header h2 {{ margin: 0; }}
-.copy-btn {{ padding: 4px 10px; border: 1px solid #0f3460; background: #16213e; color: #888; cursor: pointer; border-radius: 3px; font-size: 11px; transition: all 0.2s; }}
-.copy-btn:hover {{ color: #e0e0e0; border-color: #e94560; }}
-.back-to-top {{ position: fixed; bottom: 16px; left: 16px; padding: 8px 14px; background: #0f3460; border: 1px solid #0f3460; color: #e0e0e0; cursor: pointer; border-radius: 4px; font-size: 12px; z-index: 100; text-decoration: none; }}
-.back-to-top:hover {{ background: #1a1a4e; border-color: #e94560; }}
 </style>
 </head>
 <body>
@@ -2664,36 +2826,9 @@ let activeSchedule = "standard";
 const nodeMap = {{}};
 data.nodes.forEach(n => nodeMap[n.id] = n);
 
-function esc(s) {{
-    const d = document.createElement("div");
-    d.textContent = s || "";
-    return d.innerHTML;
-}}
+{_JS_ESC}
 
-function edgeMatchesSchedule(e) {{
-    if (activeSchedule === "all") return true;
-    return e.schedule === "always" || e.schedule === activeSchedule;
-}}
-
-function audioMatchesSchedule(a) {{
-    if (activeSchedule === "all") return true;
-    return a.schedule === "always" || a.schedule === activeSchedule;
-}}
-
-const schedLabels = {{ standard: "Standard", offhours: "Off Hours", holiday: "Holiday", alternate: "Alternate" }};
-function schedTag(sched) {{
-    if (!sched || sched === "always") return "";
-    if (activeSchedule !== "all" && sched === activeSchedule) return "";
-    return '<span class="sched-tag ' + sched + '">' + (schedLabels[sched] || sched) + '</span>';
-}}
-
-function setSchedule(mode) {{
-    activeSchedule = mode;
-    document.querySelectorAll(".schedule-btn").forEach(btn => {{
-        btn.classList.toggle("active", btn.dataset.schedule === mode);
-    }});
-    renderTrees();
-}}
+{_js_schedule_utils("renderTrees")}
 
 function renderTrees() {{
     const activeEdges = data.edges.filter(edgeMatchesSchedule);
@@ -2785,11 +2920,7 @@ function renderTrees() {{
 
 renderTrees();
 
-function flashBtn(btn, msg) {{
-    const orig = btn.textContent;
-    btn.textContent = msg || "Copied!";
-    setTimeout(() => btn.textContent = orig, 1500);
-}}
+{_JS_FLASH_BTN}
 
 function copyFlowTrees(btn) {{
     const el = document.getElementById("callFlowTrees");
@@ -2909,28 +3040,9 @@ let trailPath = []; // [{{nodeId, edgeLabel}}]
 const nodeMap = {{}};
 data.nodes.forEach(n => nodeMap[n.id] = n);
 
-function adminUrl(node) {{
-    if (!data.host || !node || !node.id) return "";
-    const ops = {{
-        callhandler: "callhandler.do?op=read",
-        interview: "interviewhandler.do?op=read",
-        directory: "directoryhandler.do?op=read",
-        routingrule: "routingrule.do?op=read",
-    }};
-    const op = ops[node.type];
-    return op ? data.host + "/cuadmin/" + op + "&objectId=" + node.id : "";
-}}
+{_js_admin_urls()}
 
-function greetingUrl(handlerId, greetingType) {{
-    if (!data.host) return "";
-    return data.host + "/cuadmin/greeting.do?op=readCallhandler&objectId=" + handlerId + "&greetingType=" + encodeURIComponent(greetingType);
-}}
-
-function esc(s) {{
-    const d = document.createElement("div");
-    d.textContent = s || "";
-    return d.innerHTML;
-}}
+{_JS_ESC}
 
 function edgeMatch(e) {{
     if (activeSchedule === "all") return true;
@@ -2983,21 +3095,7 @@ function populateEntryPoints() {{
     if (prev && sel.querySelector('option[value="' + prev + '"]')) sel.value = prev;
 }}
 
-const schedLabels = {{ standard: "Standard", offhours: "Off Hours", holiday: "Holiday", alternate: "Alternate" }};
-function schedTag(sched) {{
-    if (!sched || sched === "always") return "";
-    if (activeSchedule !== "all" && sched === activeSchedule) return "";
-    return '<span class="sched-tag ' + sched + '">' + (schedLabels[sched] || sched) + '</span>';
-}}
-
-function setSchedule(mode) {{
-    activeSchedule = mode;
-    document.querySelectorAll(".schedule-btn").forEach(btn => {{
-        btn.classList.toggle("active", btn.dataset.schedule === mode);
-    }});
-    populateEntryPoints();
-    renderFlow();
-}}
+{_js_schedule_utils("renderFlow", extra_on_change="populateEntryPoints();")}
 
 function renderFlow() {{
     const container = document.getElementById("flowContainer");
@@ -3389,21 +3487,7 @@ def generate_schedules_html(holiday_schedules, schedules, site_name="", host="",
 <title>{title_prefix}Schedules</title>
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <style>
-* {{ margin: 0; padding: 0; box-sizing: border-box; }}
-body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #1a1a2e; color: #e0e0e0; padding: 24px; }}
-h1 {{ color: #e94560; margin-bottom: 8px; }}
-h2 {{ color: #e94560; margin: 32px 0 12px 0; font-size: 20px; border-bottom: 1px solid #0f3460; padding-bottom: 8px; }}
-table {{ width: 100%; border-collapse: collapse; margin-bottom: 24px; font-size: 13px; }}
-th {{ background: #16213e; color: #e94560; text-align: left; padding: 10px 12px; position: sticky; top: 0; border-bottom: 2px solid #0f3460; }}
-td {{ padding: 8px 12px; border-bottom: 1px solid #0f3460; vertical-align: top; }}
-tr:hover {{ background: #16213e; }}
-.muted {{ color: #555; }}
-.section-header {{ display: flex; align-items: center; gap: 12px; }}
-.section-header h2 {{ margin: 0; }}
-.copy-btn {{ padding: 4px 10px; border: 1px solid #0f3460; background: #16213e; color: #888; cursor: pointer; border-radius: 3px; font-size: 11px; transition: all 0.2s; }}
-.copy-btn:hover {{ color: #e0e0e0; border-color: #e94560; }}
-.back-to-top {{ position: fixed; bottom: 16px; left: 16px; padding: 8px 14px; background: #0f3460; border: 1px solid #0f3460; color: #e0e0e0; cursor: pointer; border-radius: 4px; font-size: 12px; z-index: 100; text-decoration: none; }}
-.back-to-top:hover {{ background: #1a1a4e; border-color: #e94560; }}
+{_BASE_CSS}
 .audit-banner {{ padding: 12px 16px; border-radius: 6px; margin: 12px 0 20px 0; font-size: 13px; }}
 .audit-banner.critical {{ background: #3a1111; border: 1px solid #e74c3c; color: #e74c3c; }}
 .audit-banner.warning {{ background: #3a2a11; border: 1px solid #e67e22; color: #e67e22; }}
@@ -3435,11 +3519,7 @@ tr:hover {{ background: #16213e; }}
 <script>
 const data = {report_data};
 
-function esc(s) {{
-    const d = document.createElement("div");
-    d.textContent = s || "";
-    return d.innerHTML;
-}}
+{_JS_ESC}
 
 // Render schedules
 (function() {{
@@ -3501,23 +3581,9 @@ function esc(s) {{
     container.appendChild(banner);
 }})();
 
-function flashBtn(btn, msg) {{
-    const orig = btn.textContent;
-    btn.textContent = msg || "Copied!";
-    setTimeout(() => btn.textContent = orig, 1500);
-}}
+{_JS_FLASH_BTN}
 
-function copyTableAsMd(tableId, btn) {{
-    const table = document.getElementById(tableId);
-    const headerCells = Array.from(table.querySelectorAll("thead th"));
-    const headers = headerCells.map(th => th.textContent);
-    const lines = [headers.join(" | "), headers.map(() => "---").join(" | ")];
-    table.querySelectorAll("tbody tr").forEach(tr => {{
-        const cells = Array.from(tr.querySelectorAll("td")).map(td => td.textContent.trim());
-        lines.push(cells.join(" | "));
-    }});
-    navigator.clipboard.writeText(lines.join("\\n")).then(() => flashBtn(btn));
-}}
+{_JS_COPY_TABLE_AS_MD}
 </script>
 <a href="#" class="back-to-top">&uarr; Top</a>
 {floating_nav_html("schedules.html")}
@@ -3561,16 +3627,13 @@ def generate_test_times_html(schedules, site_name="", host="", nodes=None, edges
 <title>{title_prefix}Test Times</title>
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <style>
-* {{ margin: 0; padding: 0; box-sizing: border-box; }}
-body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #1a1a2e; color: #e0e0e0; padding: 24px; }}
-h1 {{ color: #e94560; margin-bottom: 4px; }}
+{_BASE_CSS}
+h1 {{ margin-bottom: 4px; }}
 .subtitle {{ color: #888; font-size: 13px; margin-bottom: 24px; }}
-h2 {{ color: #e94560; margin: 28px 0 10px 0; font-size: 18px; border-bottom: 1px solid #0f3460; padding-bottom: 6px; }}
-table {{ width: 100%; border-collapse: collapse; margin-bottom: 24px; font-size: 13px; }}
-th {{ background: #16213e; color: #e94560; text-align: left; padding: 8px 12px; position: sticky; top: 0; border-bottom: 2px solid #0f3460; }}
-td {{ padding: 7px 12px; border-bottom: 1px solid #0f3460; vertical-align: top; }}
-tr:hover {{ background: #16213e; }}
-.muted {{ color: #555; }}
+h2 {{ margin: 28px 0 10px 0; font-size: 18px; padding-bottom: 6px; }}
+th {{ padding: 8px 12px; }}
+td {{ padding: 7px 12px; }}
+.copy-btn {{ margin-left: 12px; }}
 .state-standard {{ color: #2ecc71; font-weight: 600; }}
 .state-offhours {{ color: #f39c12; font-weight: 600; }}
 .state-holiday {{ color: #e74c3c; font-weight: 600; }}
@@ -3578,19 +3641,9 @@ tr:hover {{ background: #16213e; }}
 .note {{ background: #16213e; border-left: 4px solid #e74c3c; padding: 16px 20px; margin: 24px 0; border-radius: 0 6px 6px 0; line-height: 1.6; }}
 .note strong {{ color: #e74c3c; }}
 .no-transitions {{ color: #888; font-style: italic; padding: 16px 0; }}
-.copy-btn {{ padding: 4px 10px; border: 1px solid #0f3460; background: #16213e; color: #888; cursor: pointer; border-radius: 3px; font-size: 11px; transition: all 0.2s; margin-left: 12px; }}
-.copy-btn:hover {{ color: #e0e0e0; border-color: #e94560; }}
-.section-header {{ display: flex; align-items: center; gap: 12px; }}
-.section-header h2 {{ margin: 0; }}
-.back-to-top {{ position: fixed; bottom: 16px; left: 16px; padding: 8px 14px; background: #0f3460; border: 1px solid #0f3460; color: #e0e0e0; cursor: pointer; border-radius: 4px; font-size: 12px; z-index: 100; text-decoration: none; }}
-.back-to-top:hover {{ background: #1a1a4e; border-color: #e94560; }}
 .day-off {{ background: #1a1a2e; }}
 .dial-path {{ font-family: monospace; font-weight: 600; color: #1abc9c; letter-spacing: 1px; }}
 .dial-entry {{ color: #e94560; font-weight: 600; }}
-.sched-tag {{ display: inline-block; padding: 1px 6px; border-radius: 8px; font-size: 10px; font-weight: 600; margin-left: 4px; }}
-.sched-tag.offhours {{ background: #5b3a1e; color: #f39c12; }}
-.sched-tag.holiday {{ background: #4a1a2e; color: #e74c3c; }}
-.sched-tag.standard {{ background: #1a3a2e; color: #2ecc71; }}
 .cheat-group {{ background: #16213e; border: 1px solid #0f3460; border-radius: 8px; padding: 16px 20px; margin-bottom: 16px; }}
 .cheat-group-hdr {{ display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; }}
 .cheat-group-name {{ font-size: 16px; font-weight: 700; color: #e94560; }}
@@ -3602,7 +3655,6 @@ tr:hover {{ background: #16213e; }}
 .cheat-step .target {{ color: #888; font-size: 12px; }}
 .cheat-sched {{ margin-top: 2px; }}
 .cheat-divider {{ border: none; border-top: 1px solid #0f3460; margin: 6px 0; }}
-.sched-tag.alternate {{ background: #2a1a4e; color: #9b59b6; }}
 .sched-tag.always {{ background: #1a2a3e; color: #3498db; }}
 </style>
 </head>
@@ -3629,11 +3681,7 @@ function fmtTime(minutes) {{
     return h12 + ":" + String(m).padStart(2, "0") + " " + ampm;
 }}
 
-function esc(s) {{
-    const d = document.createElement("div");
-    d.textContent = s || "";
-    return d.innerHTML;
-}}
+{_JS_ESC}
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const DAY_LABELS = {{ Mon: "Monday", Tue: "Tuesday", Wed: "Wednesday", Thu: "Thursday", Fri: "Friday", Sat: "Saturday", Sun: "Sunday" }};
@@ -4008,11 +4056,7 @@ const DAY_LABELS = {{ Mon: "Monday", Tue: "Tuesday", Wed: "Wednesday", Thu: "Thu
     }});
 }})();
 
-function flashBtn(btn, msg) {{
-    const orig = btn.textContent;
-    btn.textContent = msg || "Copied!";
-    setTimeout(() => btn.textContent = orig, 1500);
-}}
+{_JS_FLASH_BTN}
 
 function copyDayTable(day, btn, label) {{
     const table = document.getElementById("table-" + day);
@@ -4036,87 +4080,8 @@ function copyDayTable(day, btn, label) {{
 
 def generate_audit_html(nodes, edges, holiday_audit, site_name="", host=""):
     title_prefix = f"{site_name} — " if site_name else ""
-
-    # Build categorized audit data for JSON embedding
-    handler_warnings = []
-    for n in nodes:
-        if n.get("type") != "callhandler":
-            continue
-        ws = n.get("warnings", [])
-        if ws:
-            handler_warnings.append({
-                "id": n["id"],
-                "name": n.get("name", ""),
-                "extension": n.get("extension", ""),
-                "warnings": ws,
-            })
-
-    codec_warnings = []
-    system_default_audio = []
-    no_audio_items = []
-    audio_download_failures = []
-    for n in nodes:
-        for a in n.get("audio", []):
-            if a.get("codecWarning"):
-                codec_warnings.append({
-                    "handler": n.get("name", ""),
-                    "id": n["id"],
-                    "greeting": a.get("greeting", ""),
-                    "codec": a.get("codec", "Unknown"),
-                })
-            if a.get("systemDefault"):
-                system_default_audio.append({
-                    "handler": n.get("name", ""),
-                    "id": n["id"],
-                    "greeting": a.get("greeting", ""),
-                    "enabled": a.get("enabled", True),
-                })
-            if a.get("noAudio") and a.get("greeting") == "Standard" and a.get("enabled", True):
-                reachable = n.get("classification") in ("root", "normal")
-                no_audio_items.append({
-                    "handler": n.get("name", ""),
-                    "id": n["id"],
-                    "reachable": reachable,
-                })
-            if a.get("failReason"):
-                audio_download_failures.append({
-                    "handler": n.get("name", ""),
-                    "id": n["id"],
-                    "greeting": a.get("greeting", ""),
-                    "reason": a.get("failReason", "Unknown"),
-                })
-
-    orphans = [{"name": n["name"], "id": n["id"]} for n in nodes if n.get("classification") == "orphan"]
-    unreachable = [{"name": n["name"], "id": n["id"]} for n in nodes if n.get("classification") == "unreachable"]
-    dead_ends = [{"name": n["name"], "id": n["id"]} for n in nodes if n.get("classification") == "deadend"]
-
-    # Extension dialing findings — unlocked keys on reachable handlers
-    ext_dialing_items = []
-    for n in nodes:
-        if n.get("type") != "callhandler":
-            continue
-        uk = n.get("unlockedKeys", [])
-        if uk and n.get("classification") in ("root", "normal"):
-            ext_dialing_items.append({
-                "handler": n.get("name", ""),
-                "id": n["id"],
-                "keys": uk,
-            })
-
-    report_data = json.dumps({
-        "host": host,
-        "siteName": site_name,
-        "handlerWarnings": handler_warnings,
-        "holidayAudit": holiday_audit or [],
-        "codecWarnings": codec_warnings,
-        "systemDefaultAudio": system_default_audio,
-        "noAudioItems": no_audio_items,
-        "audioDownloadFailures": audio_download_failures,
-        "extDialingItems": ext_dialing_items,
-        "orphans": orphans,
-        "unreachable": unreachable,
-        "deadEnds": dead_ends,
-    })
+    findings = collect_audit_findings(nodes, holiday_audit)
+    report_data = json.dumps({"host": host, "siteName": site_name, **findings})
 
     return f'''<!DOCTYPE html>
 <html lang="en">
@@ -4126,21 +4091,18 @@ def generate_audit_html(nodes, edges, holiday_audit, site_name="", host=""):
 <title>{title_prefix}Audit Results</title>
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <style>
-* {{ margin: 0; padding: 0; box-sizing: border-box; }}
-body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #1a1a2e; color: #e0e0e0; padding: 24px; }}
-h1 {{ color: #e94560; margin-bottom: 4px; }}
+{_BASE_CSS}
+h1 {{ margin-bottom: 4px; }}
 .subtitle {{ color: #888; font-size: 14px; margin-bottom: 24px; }}
-h2 {{ color: #e94560; margin: 28px 0 10px 0; font-size: 18px; border-bottom: 1px solid #0f3460; padding-bottom: 6px; display: flex; align-items: center; gap: 10px; }}
+h2 {{ margin: 28px 0 10px 0; font-size: 18px; padding-bottom: 6px; display: flex; align-items: center; gap: 10px; }}
 .badge {{ font-size: 11px; padding: 2px 8px; border-radius: 10px; font-weight: 700; }}
 .badge-critical {{ background: #e74c3c; color: #fff; }}
 .badge-warning {{ background: #e67e22; color: #fff; }}
 .badge-info {{ background: #2ecc71; color: #fff; }}
 .badge-ok {{ background: #555; color: #ccc; }}
-table {{ width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 13px; }}
-th {{ background: #16213e; color: #e94560; text-align: left; padding: 8px 12px; position: sticky; top: 0; border-bottom: 2px solid #0f3460; }}
-td {{ padding: 6px 12px; border-bottom: 1px solid #0f3460; vertical-align: top; }}
-tr:hover {{ background: #16213e; }}
-.muted {{ color: #555; }}
+table {{ margin-bottom: 20px; }}
+th {{ padding: 8px 12px; }}
+td {{ padding: 6px 12px; }}
 a {{ color: #1abc9c; text-decoration: none; }}
 a:hover {{ text-decoration: underline; }}
 .level-critical {{ color: #e74c3c; font-weight: 700; }}
@@ -4156,8 +4118,6 @@ a.summary-card:hover {{ border-color: #1abc9c; }}
 .summary-card.warning .count {{ color: #e67e22; }}
 .summary-card.clean .count {{ color: #2ecc71; }}
 .section-empty {{ color: #555; font-style: italic; padding: 8px 0; font-size: 13px; }}
-.back-to-top {{ position: fixed; bottom: 16px; left: 16px; padding: 8px 14px; background: #0f3460; border: 1px solid #0f3460; color: #e0e0e0; cursor: pointer; border-radius: 4px; font-size: 12px; z-index: 100; text-decoration: none; }}
-.back-to-top:hover {{ background: #1a1a4e; border-color: #e94560; }}
 </style>
 </head>
 <body>
@@ -4187,11 +4147,7 @@ a.summary-card:hover {{ border-color: #1abc9c; }}
 <script>
 const data = {report_data};
 
-function esc(s) {{
-    const d = document.createElement("div");
-    d.textContent = s || "";
-    return d.innerHTML;
-}}
+{_JS_ESC}
 
 function adminLink(id) {{
     if (!data.host) return "";
@@ -4372,11 +4328,10 @@ def generate_help_html(site_name=""):
 <title>{title_prefix}Help</title>
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <style>
-* {{ margin: 0; padding: 0; box-sizing: border-box; }}
-body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #1a1a2e; color: #e0e0e0; padding: 24px; max-width: 900px; margin: 0 auto; }}
-h1 {{ color: #e94560; margin-bottom: 4px; }}
+{_BASE_CSS}
+body {{ max-width: 900px; margin: 0 auto; }}
+h1 {{ margin-bottom: 4px; }}
 .subtitle {{ color: #888; font-size: 14px; margin-bottom: 32px; }}
-h2 {{ color: #e94560; margin: 32px 0 12px 0; font-size: 20px; border-bottom: 1px solid #0f3460; padding-bottom: 8px; }}
 h3 {{ color: #1abc9c; margin: 20px 0 8px 0; font-size: 16px; }}
 p {{ line-height: 1.7; margin-bottom: 12px; font-size: 14px; }}
 ul, ol {{ margin: 8px 0 16px 24px; font-size: 14px; line-height: 1.8; }}
@@ -4947,90 +4902,9 @@ def cmd_generate(args):
         timings.append(("Generate HTML reports", time.perf_counter() - t0, 8))
 
         # Write audit.log with all findings
-        audit_lines = []
-        audit_lines.append(f"Call Handler Wizard Audit — {site_name or 'Unknown Site'}")
-        audit_lines.append(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        audit_lines.append(f"{'='*60}")
-
-        # Handler warnings
-        if warned_nodes:
-            audit_lines.append(f"\nHANDLER WARNINGS ({sum(len(w) for _, w in warned_nodes)} issues across {len(warned_nodes)} handlers)")
-            audit_lines.append("-" * 40)
-            for name, warnings in warned_nodes:
-                for w in warnings:
-                    audit_lines.append(f"  [WARNING] {name}: {w}")
-
-        # Holiday audit
-        if holiday_audit:
-            audit_lines.append(f"\nHOLIDAY CALENDAR AUDIT")
-            audit_lines.append("-" * 40)
-            for finding in holiday_audit:
-                tag = "CRITICAL" if finding["level"] == "critical" else "WARNING" if finding["level"] == "warning" else "OK"
-                audit_lines.append(f"  [{tag}] {finding['message']}")
-
-        # Audio download failures
-        audio_failures = []
-        for n in nodes:
-            for a in n.get("audio", []):
-                if a.get("failReason"):
-                    audio_failures.append(f"  [FAILED] {n.get('name', '?')} — {a.get('greeting', '?')}: {a.get('failReason', '?')}")
-        if audio_failures:
-            audit_lines.append(f"\nAUDIO DOWNLOAD FAILURES ({len(audio_failures)})")
-            audit_lines.append("-" * 40)
-            audit_lines.extend(audio_failures)
-
-        # Codec warnings
-        codec_warnings = []
-        for n in nodes:
-            for a in n.get("audio", []):
-                if a.get("codecWarning"):
-                    codec_warnings.append(f"  [WARNING] {n.get('name', '?')} — {a.get('greeting', '?')}: {a.get('codec', '?')} (not playable in browser)")
-        if codec_warnings:
-            audit_lines.append(f"\nAUDIO CODEC WARNINGS")
-            audit_lines.append("-" * 40)
-            audit_lines.extend(codec_warnings)
-
-        # Classification concerns
-        orphans = [n for n in nodes if n["classification"] == "orphan"]
-        unreachable = [n for n in nodes if n["classification"] == "unreachable"]
-        dead_ends = [n for n in nodes if n["classification"] == "deadend"]
-        if orphans or unreachable or dead_ends:
-            audit_lines.append(f"\nCLASSIFICATION CONCERNS")
-            audit_lines.append("-" * 40)
-            if orphans:
-                audit_lines.append(f"  [WARNING] {len(orphans)} true orphan(s): {', '.join(n['name'] for n in orphans)}")
-            if unreachable:
-                audit_lines.append(f"  [WARNING] {len(unreachable)} unreachable subtree(s): {', '.join(n['name'] for n in unreachable)}")
-            if dead_ends:
-                audit_lines.append(f"  [WARNING] {len(dead_ends)} dead end(s): {', '.join(n['name'] for n in dead_ends)}")
-
-        # Extension dialing
-        ext_dialing = [n for n in nodes if n.get("type") == "callhandler"
-                       and n.get("unlockedKeys") and n.get("classification") in ("root", "normal")]
-        if ext_dialing:
-            audit_lines.append(f"\nEXTENSION DIALING ({len(ext_dialing)} handlers)")
-            audit_lines.append("-" * 40)
-            for n in ext_dialing:
-                keys = ", ".join(n["unlockedKeys"])
-                audit_lines.append(f"  [WARNING] {n['name']}: unlocked keys {keys} — verify restriction table blocks external dialing")
-
-        # Summary
-        total_warnings = sum(len(w) for _, w in warned_nodes) + len(codec_warnings) + len(audio_failures) + len(ext_dialing)
-        total_critical = sum(1 for f in holiday_audit if f["level"] == "critical") if holiday_audit else 0
-        has_findings = total_warnings > 0 or total_critical > 0 or orphans or unreachable or dead_ends
-
-        audit_lines.append(f"\n{'='*60}")
-        if has_findings:
-            audit_lines.append(f"RESULT: AUDIT FINDINGS DETECTED")
-            audit_lines.append(f"  {total_critical} critical, {total_warnings} warnings, "
-                             f"{len(orphans)} orphans, {len(unreachable)} unreachable, {len(dead_ends)} dead ends")
-        else:
-            audit_lines.append(f"RESULT: PASS — no issues detected")
-        audit_lines.append(f"{'='*60}")
-
-        audit_path = os.path.join(site_dir, "audit.log")
-        with open(audit_path, "w", encoding="utf-8") as f:
-            f.write("\n".join(audit_lines) + "\n")
+        findings = collect_audit_findings(nodes, holiday_audit)
+        has_findings, total_warnings, total_critical, n_orphans, n_unreachable, n_dead_ends, audit_path = \
+            _write_audit_log(site_dir, findings, warned_nodes, holiday_audit, site_name)
 
         # --- Timing summary ---
         total_elapsed = time.perf_counter() - run_start
