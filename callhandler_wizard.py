@@ -1580,7 +1580,9 @@ def _js_admin_urls(data_var="data"):
         directory: "directoryhandler.do?op=read",
         routingrule: "routing-rule.do?op=read",
     }};
-    const op = ops[node.type];
+    let op = ops[node.type];
+    if (node.type === "routingrule" && node.ruleType === "Direct") op = "routing-rule.do?op=readDirectRule";
+    else if (node.type === "routingrule" && node.ruleType === "Forwarded") op = "routing-rule.do?op=readForwardedRule";
     return op ? {data_var}.host + "/cuadmin/" + op + "&objectId=" + node.id : "";
 }}
 
