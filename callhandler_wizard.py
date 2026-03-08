@@ -3280,14 +3280,23 @@ function createCard(node, isEntry) {{
             const bk = b.label.startsWith("Key ") ? "0" + b.label : b.label.startsWith("After:") ? "2" + b.label : "1" + b.label;
             return ak.localeCompare(bk);
         }});
-        // If a schedule-specific after-greeting route exists, note that keys are only available during the greeting
+        // If a schedule-specific after-greeting route exists, explain what happens to the menu keys
         if (activeSchedule !== "all") {{
-            const hasAutoRoute = edges.some(e => (e.label.startsWith("After:") || e.label.startsWith("Xfer:")) && e.schedule === activeSchedule);
+            const autoEdge = edges.find(e => (e.label.startsWith("After:") || e.label.startsWith("Xfer:")) && e.schedule === activeSchedule);
             const hasKeys = edges.some(e => e.label.startsWith("Key "));
-            if (hasAutoRoute && hasKeys) {{
+            if (autoEdge && hasKeys) {{
+                const schedGreetings = {{ standard: "Standard", offhours: "Off Hours", holiday: "Holiday" }};
+                const greetName = schedGreetings[activeSchedule] || "";
+                const greetAudio = (node.audio || []).find(a => a.greeting === greetName);
+                const hasAudio = greetAudio && !greetAudio.noAudio;
+                const targetName = nodeMap[autoEdge.target] ? nodeMap[autoEdge.target].name : "next handler";
                 const note = document.createElement("div");
                 note.style.cssText = "padding: 6px 16px; background: #1a1a2e; border-bottom: 1px solid #0a1628; color: #888; font-size: 11px; font-style: italic;";
-                note.textContent = "Call routes automatically after greeting. Keys below are only available during playback.";
+                if (hasAudio) {{
+                    note.textContent = "Caller hears the " + greetName + " greeting, then transfers to " + targetName + ". Keys below are only available during playback.";
+                }} else {{
+                    note.textContent = "No " + greetName + " greeting audio — caller transfers immediately to " + targetName + ". Keys below are not reachable.";
+                }}
                 card.appendChild(note);
             }}
         }}
