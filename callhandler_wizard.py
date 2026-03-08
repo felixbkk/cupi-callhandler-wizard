@@ -1386,8 +1386,6 @@ body.light-mode .sched-tag {{ background: #e8ecf0 !important; color: #666 !impor
 
 /* Debug panel */
 body.light-mode .debug-toggle {{ background: #e8ecf0 !important; border-color: #d0d7de !important; color: #666 !important; }}
-body.light-mode #debugPanel {{ background: #fff !important; border-color: #d0d7de !important; }}
-body.light-mode #debugPanel input {{ background: #f6f8fa !important; border-color: #d0d7de !important; color: #1f2328 !important; }}
 body.light-mode .debug-btn {{ background: #f0f2f5 !important; border-color: #d0d7de !important; color: #1f2328 !important; }}
 body.light-mode #debugOutput {{ background: #f6f8fa !important; color: #1f2328 !important; }}
 
@@ -2475,19 +2473,13 @@ def generate_table_html(nodes, edges, holiday_schedules, schedules, site_name=""
 .toc a:hover {{ background: #0f3460; text-decoration: underline; }}
 .oid {{ font-family: monospace; font-size: 11px; color: #666; }}
 .filter-bar {{ margin: 12px 0; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }}
-.filter-bar input {{ padding: 8px 12px; border: 1px solid #0f3460; background: #16213e; color: #e0e0e0; border-radius: 4px; font-size: 13px; width: 300px; }}
+.filter-bar {{ position: relative; }}
+.filter-bar input {{ padding: 8px 32px 8px 12px; border: 1px solid #0f3460; background: #16213e; color: #e0e0e0; border-radius: 4px; font-size: 13px; width: 300px; }}
+.search-clear {{ position: absolute; right: 4px; top: 50%; transform: translateY(-50%); background: none; border: none; color: #888; cursor: pointer; font-size: 16px; padding: 0 8px; line-height: 1; display: none; }}
+.search-clear:hover {{ color: #e94560; }}
 .filter-bar select {{ padding: 8px 12px; border: 1px solid #0f3460; background: #16213e; color: #e0e0e0; border-radius: 4px; font-size: 13px; }}
 .audio-link {{ color: #1abc9c; text-decoration: none; font-size: 12px; }}
 .audio-link:hover {{ text-decoration: underline; }}
-.debug-toggle {{ position: fixed; bottom: 16px; right: 16px; padding: 8px 14px; background: #0f3460; border: 1px solid #e94560; color: #e94560; cursor: pointer; border-radius: 4px; font-size: 12px; z-index: 100; }}
-.debug-toggle:hover {{ background: #1a1a4e; }}
-#debugPanel {{ display: none; background: #0d1b2a; border: 1px solid #0f3460; border-radius: 8px; padding: 20px; margin-top: 32px; }}
-#debugPanel h2 {{ color: #e94560; margin-bottom: 12px; }}
-.debug-bar {{ display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }}
-.debug-bar input {{ flex: 1; min-width: 200px; padding: 8px 12px; border: 1px solid #0f3460; background: #16213e; color: #e0e0e0; border-radius: 4px; font-size: 13px; }}
-.debug-btn {{ padding: 8px 14px; border: 1px solid #0f3460; background: #16213e; color: #e0e0e0; cursor: pointer; border-radius: 4px; font-size: 12px; white-space: nowrap; }}
-.debug-btn:hover {{ background: #0f3460; }}
-#debugOutput {{ background: #1a1a2e; border: 1px solid #0f3460; border-radius: 4px; padding: 12px; font-family: monospace; font-size: 12px; white-space: pre-wrap; max-height: 500px; overflow-y: auto; color: #aaa; }}
 .schedule-bar {{ display: flex; gap: 4px; margin: 16px 0; }}
 .schedule-btn {{ padding: 8px 16px; border: 2px solid #0f3460; background: #16213e; color: #e0e0e0; cursor: pointer; border-radius: 4px; font-size: 13px; font-weight: 600; transition: all 0.2s; }}
 .schedule-btn:hover {{ border-color: #e94560; }}
@@ -2511,7 +2503,10 @@ def generate_table_html(nodes, edges, holiday_schedules, schedules, site_name=""
 
 <div class="section-header"><h2 id="handlers">Call Handlers &amp; Routing</h2><button class="copy-btn" onclick="copyHandlerTable(this)">Copy as Markdown</button></div>
 <div class="filter-bar">
-<input type="text" id="search" placeholder="Filter by name, extension, or type..." oninput="renderTable()">
+<div style="position:relative; display:inline-block;">
+<input type="text" id="search" placeholder="Filter by name, extension, or type..." oninput="onSearchInput()">
+<button class="search-clear" id="searchClear" onclick="clearSearch()">&times;</button>
+</div>
 <select id="classFilter" onchange="renderTable()">
 <option value="">All Classifications</option>
 <option value="root">Root (Entry Point)</option>
@@ -2554,7 +2549,19 @@ function nodeColor(n) {{
 
 {_js_admin_urls()}
 
-{_js_schedule_utils("renderTable")}
+{_js_schedule_utils("renderTable", extra_on_change="clearSearch();")}
+
+function onSearchInput() {{
+    const btn = document.getElementById("searchClear");
+    btn.style.display = document.getElementById("search").value ? "block" : "none";
+    renderTable();
+}}
+function clearSearch() {{
+    const input = document.getElementById("search");
+    input.value = "";
+    document.getElementById("searchClear").style.display = "none";
+    renderTable();
+}}
 
 function renderTable() {{
     const search = (document.getElementById("search").value || "").toLowerCase();
@@ -2702,146 +2709,9 @@ function copyHandlerTable(btn) {{
 
 {_JS_COPY_TABLE_AS_MD}
 
-// --- Debug Tools ---
-function toggleDebug() {{
-    const panel = document.getElementById("debugPanel");
-    panel.style.display = panel.style.display === "block" ? "none" : "block";
-}}
-
-function debugLookup() {{
-    const q = document.getElementById("debugQuery").value.trim().toLowerCase();
-    const out = document.getElementById("debugOutput");
-    if (!q) {{ out.textContent = "Enter a name, extension, or Object ID to search."; return; }}
-
-    const matchedNodes = data.nodes.filter(n =>
-        n.name.toLowerCase().includes(q) ||
-        (n.extension && n.extension.toLowerCase().includes(q)) ||
-        n.id.toLowerCase().includes(q)
-    );
-
-    if (!matchedNodes.length) {{ out.textContent = "No matching nodes found."; return; }}
-
-    const results = matchedNodes.map(n => {{
-        const outEdges = data.edges.filter(e => e.source === n.id);
-        const inEdges = data.edges.filter(e => e.target === n.id);
-        return {{
-            node: n,
-            outgoing: outEdges.map(e => ({{
-                label: e.label,
-                schedule: e.schedule,
-                target_id: e.target,
-                target_name: (nodeMap[e.target] || {{}}).name || "?"
-            }})),
-            incoming: inEdges.map(e => ({{
-                label: e.label,
-                schedule: e.schedule,
-                source_id: e.source,
-                source_name: (nodeMap[e.source] || {{}}).name || "?"
-            }}))
-        }};
-    }});
-    out.textContent = JSON.stringify(results, null, 2);
-}}
-
-function debugDumpAll() {{
-    const out = document.getElementById("debugOutput");
-    out.textContent = JSON.stringify(data, null, 2);
-}}
-
-function debugOrphans() {{
-    const out = document.getElementById("debugOutput");
-    const report = {{}};
-
-    // True orphans: zero connections
-    report.trueOrphans = data.nodes
-        .filter(n => n.classification === "orphan")
-        .map(n => ({{ name: n.name, extension: n.extension, id: n.id }}));
-
-    // Unreachable: have edges but no path from any routing rule
-    report.unreachable = data.nodes
-        .filter(n => n.classification === "unreachable")
-        .map(n => {{
-            const outEdges = data.edges.filter(e => e.source === n.id);
-            const inEdges = data.edges.filter(e => e.target === n.id);
-            return {{
-                name: n.name, extension: n.extension, id: n.id,
-                connectsTo: outEdges.map(e => (nodeMap[e.target] || {{}}).name || e.target),
-                connectedFrom: inEdges.map(e => (nodeMap[e.source] || {{}}).name || e.source)
-            }};
-        }});
-
-    // Dead ends: reachable but callers get stuck
-    report.deadEnds = data.nodes
-        .filter(n => n.classification === "deadend")
-        .map(n => {{
-            const inEdges = data.edges.filter(e => e.target === n.id);
-            return {{
-                name: n.name, extension: n.extension, id: n.id,
-                reachedVia: inEdges.map(e => (nodeMap[e.source] || {{}}).name + " (" + e.label + ")")
-            }};
-        }});
-
-    // Schedule gaps: reachable in some schedules but not others
-    report.scheduleGaps = data.nodes
-        .filter(n => n.reachable && n.type === "callhandler" && n.classification !== "orphan" &&
-            !(n.reachable.standard && n.reachable.offhours && n.reachable.holiday))
-        .map(n => ({{
-            name: n.name, extension: n.extension, id: n.id,
-            reachableDuring: {{
-                standard: n.reachable.standard,
-                offhours: n.reachable.offhours,
-                holiday: n.reachable.holiday
-            }}
-        }}));
-
-    // Configuration warnings
-    report.warnings = data.nodes
-        .filter(n => n.warnings && n.warnings.length)
-        .map(n => ({{ name: n.name, extension: n.extension, id: n.id, warnings: n.warnings }}));
-
-    // Per-schedule edge counts
-    const scheduleCounts = {{}};
-    data.edges.forEach(e => scheduleCounts[e.schedule] = (scheduleCounts[e.schedule] || 0) + 1);
-    report.edgesBySchedule = scheduleCounts;
-
-    report.summary = {{
-        totalHandlers: data.nodes.filter(n => n.type === "callhandler").length,
-        trueOrphans: report.trueOrphans.length,
-        unreachable: report.unreachable.length,
-        deadEnds: report.deadEnds.length,
-        scheduleGaps: report.scheduleGaps.length,
-        warnings: report.warnings.length
-    }};
-
-    out.textContent = JSON.stringify(report, null, 2);
-}}
-function copyDebugOutput() {{
-    const text = document.getElementById("debugOutput").textContent;
-    navigator.clipboard.writeText(text).then(() => {{
-        const btn = document.getElementById("copyBtn");
-        btn.textContent = "Copied!";
-        setTimeout(() => btn.textContent = "Copy Output", 1500);
-    }});
-}}
 </script>
 
 <a href="#" class="back-to-top">&uarr; Top</a>
-<button class="debug-toggle" onclick="toggleDebug()">Debug Tools</button>
-<div id="debugPanel">
-<h2>Debug Tools</h2>
-<div class="debug-bar">
-<input type="text" id="debugQuery" placeholder="Search by name, extension, or Object ID..." onkeydown="if(event.key==='Enter')debugLookup()">
-<button class="debug-btn" onclick="debugLookup()">Lookup Node</button>
-<button class="debug-btn" onclick="debugOrphans()">Find Problems</button>
-<button class="debug-btn" onclick="debugDumpAll()">Dump All Data</button>
-<button class="debug-btn" onclick="copyDebugOutput()" id="copyBtn">Copy Output</button>
-</div>
-<pre id="debugOutput">Use the tools above to inspect raw data.
-
-&bull; Lookup Node &mdash; search for a handler by name, extension, or ID to see its full data, all connections, and schedule tags
-&bull; Find Problems &mdash; list dead ends, orphans, unreachable nodes, and edge counts per schedule
-&bull; Dump All Data &mdash; export the complete JSON dataset (nodes, edges, schedules, holidays)</pre>
-</div>
 {floating_nav_html("callhandler_report.html")}
 </body>
 </html>'''
@@ -4752,6 +4622,7 @@ code {{ background: #0f3460; padding: 2px 6px; border-radius: 3px; font-size: 13
 <li><a href="#audio">Audio Playback</a></li>
 <li><a href="#audio-upload">Uploading Greeting Audio</a></li>
 <li><a href="#tips">Tips</a></li>
+<li><a href="#debug">Debug Tools (CLI)</a></li>
 </ol>
 </nav>
 
@@ -4796,8 +4667,8 @@ code {{ background: #0f3460; padding: 2px 6px; border-radius: 3px; font-size: 13
 <p>Searchable table listing every call handler with its routing rules, greetings, and menu keys. Use the schedule selector to compare how routing differs by time of day.</p>
 <ul>
 <li>Search by handler name, extension, type, or classification</li>
+<li>Filter by classification (Root, Normal, Dead End, etc.) using the dropdown</li>
 <li>Click the audio player icons to hear greeting recordings</li>
-<li>The debug panel (bottom-right button) provides raw data lookup and a problem finder</li>
 </ul>
 
 <h3>Schedules</h3>
@@ -4956,6 +4827,20 @@ code {{ background: #0f3460; padding: 2px 6px; border-radius: 3px; font-size: 13
 <li>The Graph page is useful for getting a high-level picture; the Call Flow page is better for step-by-step tracing</li>
 <li>CUC admin links (where shown) open the handler directly in the Cisco Unity Connection admin interface</li>
 </ul>
+</div>
+
+<div class="section" id="debug">
+<h2>Debug Tools (CLI)</h2>
+<p>The command-line tool includes several debug commands for deeper investigation. These connect to the CUC server in real time and are separate from the generated reports.</p>
+<ul>
+<li><strong>handler &lt;search&gt;</strong> &mdash; Look up a handler by name, extension, or Object ID. Shows transfer rules, greetings, menu entries, and all raw fields. Add <code>--raw</code> for full JSON dump.</li>
+<li><strong>orphans</strong> &mdash; Find all orphaned, unreachable, and dead-end handlers with per-schedule reachability analysis.</li>
+<li><strong>schedules</strong> &mdash; List all business hour and holiday schedules with day-by-day details.</li>
+<li><strong>query &lt;path&gt;</strong> &mdash; Hit any CUPI REST API path and dump the raw JSON response. Useful for exploring endpoints not covered by the reports.</li>
+<li><strong>probe</strong> &mdash; Test 40+ CUPI endpoints to map which APIs are available on your server.</li>
+<li><strong>audio</strong> &mdash; HEAD-check every handler's greeting audio URLs to find missing or broken recordings.</li>
+</ul>
+<div class="tip"><strong>Example:</strong> <code>python callhandler_wizard.py --host https://10.x.x.x --user admin handler "Opening Greeting"</code></div>
 </div>
 
 <div class="note" style="margin-top: 32px;">
