@@ -4917,6 +4917,7 @@ code {{ background: #0f3460; padding: 2px 6px; border-radius: 3px; font-size: 13
 </ul>
 <div class="tip"><strong>Recommended:</strong> Use <strong>PCM 16-bit, 8000 Hz, mono WAV</strong> for the widest compatibility. Most audio editors (Audacity, etc.) can export in this format.</div>
 <div class="warn"><strong>Rejected formats:</strong> MP3, M4A, WMA, stereo files, and sample rates other than 8000 Hz will be rejected by CUC.</div>
+<div class="tip"><strong>ffmpeg conversion:</strong> Convert any audio file to CUC-compatible WAV:<br><code>ffmpeg -i input.wav -ar 8000 -ac 1 -acodec pcm_s16le output.wav</code><br>Works with MP3, M4A, and other formats as input too.</div>
 </div>
 
 <div class="section" id="tips">
